@@ -26,7 +26,43 @@
     },
     {
       "search_term": "program manager operations",
-      "category": "secondary"
+      "category": "primary"
+    },
+    {
+      "search_term": "program manager supply chain",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain intern 2026",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain intern 2027",
+      "category": "primary"
+    },
+    {
+      "search_term": "operations intern 2027",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain new grad",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain new grad 2027",
+      "category": "primary"
+    },
+    {
+      "search_term": "program manager intern 2027",
+      "category": "primary"
+    },
+    {
+      "search_term": "procurement intern",
+      "category": "primary"
+    },
+    {
+      "search_term": "logistics intern 2027",
+      "category": "primary"
     },
     {
       "search_term": "process improvement analyst",
@@ -41,11 +77,19 @@
       "category": "secondary"
     },
     {
+      "search_term": "operations new grad 2027",
+      "category": "secondary"
+    },
+    {
       "search_term": "inventory analyst",
       "category": "stretch"
     },
     {
       "search_term": "strategic sourcing analyst",
+      "category": "stretch"
+    },
+    {
+      "search_term": "S&OP analyst",
       "category": "stretch"
     }
   ],
@@ -53,6 +97,8 @@
     "supply chain analyst jobs near Seattle, WA since yesterday",
     "operations analyst jobs near Seattle, WA since yesterday",
     "program manager supply chain jobs near Seattle, WA since yesterday",
+    "supply chain intern 2027 jobs near Seattle, WA since yesterday",
+    "new grad supply chain operations 2027 jobs since yesterday",
     "procurement logistics analyst jobs near Seattle, WA since yesterday"
   ]
 }

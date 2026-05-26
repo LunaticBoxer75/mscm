@@ -3,3 +3,4 @@ anthropic[bedrock]>=0.45.0
 pandas>=2.0.0
 sqlite-utils>=3.36
 rich>=13.0.0
+streamlit>=1.38.0
