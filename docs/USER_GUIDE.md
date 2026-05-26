@@ -6,13 +6,15 @@ A complete daily job identification and career development system for Bhumika Ch
 
 ## Table of Contents
 1. [Daily Workflow (5 minutes)](#daily-workflow)
-2. [Slash Commands Reference](#slash-commands)
-3. [Understanding the Reports](#understanding-reports)
-4. [Managing Your Job Search](#managing-search)
-5. [Portfolio Projects](#portfolio-projects)
-6. [Application Tracking](#application-tracking)
-7. [Customization](#customization)
-8. [Troubleshooting](#troubleshooting)
+2. [Web Dashboard](#web-dashboard)
+3. [Slash Commands Reference](#slash-commands)
+4. [Understanding the Reports](#understanding-reports)
+5. [Search Strategy](#search-strategy)
+6. [Managing Your Job Search](#managing-search)
+7. [Portfolio Projects](#portfolio-projects)
+8. [Application Tracking](#application-tracking)
+9. [Customization](#customization)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -40,19 +42,61 @@ That's it. The system will:
 - Previously seen jobs are deduplicated (won't show duplicates)
 - All results are saved to `data/jobs.db` for historical tracking
 
+### Want a Visual View Instead?
+```
+/dashboard
+```
+Opens a full web dashboard at http://localhost:8501 (see next section).
+
+---
+
+## Web Dashboard
+
+A Streamlit-based web UI for browsing, filtering, and exploring job results.
+
+### Launch It
+```
+/dashboard
+```
+Or manually: `streamlit run app.py --server.port 8501`
+
+### What You'll See
+- **Metrics bar** — Total jobs, scored, high matches (75+), good matches (60-74), unscored
+- **5 tabs:**
+  - Seattle Full-Time
+  - Seattle Internships
+  - National Full-Time
+  - National Internships
+  - All Jobs
+- **Sidebar filters** — Minimum score slider, region selector, job type filter
+- **Job detail panel** — Click any job to see full score breakdown, reasoning, highlights, and red flags
+- **Company leaderboard** — Top companies by average score
+
+### Features
+- Clickable "Apply →" links take you directly to the job posting
+- Score shown as a progress bar (color-coded)
+- Full job description expandable in detail view
+- Salary display with MSCM benchmark comparison
+
 ---
 
 ## Slash Commands
 
 | Command | What It Does |
 |---------|-------------|
-| `/find-jobs` | Full pipeline: scrape → score → report |
-| `/job-stats` | Show database statistics and trends |
+| `/find-jobs` | Full pipeline: scrape → score → report (4 panels) |
+| `/job-stats` | Show database statistics, company leaderboard, trends |
 | `/add-search` | Add a new search term (e.g., "add data analyst") |
 | `/generate-projects` | Create portfolio projects from skill gaps |
 | `/track` | View/update application status tracker |
+| `/dashboard` | Launch the Streamlit web dashboard |
 
 ### Usage Examples
+
+**Run the daily job search:**
+```
+/find-jobs
+```
 
 **Add a new role to search for:**
 ```
@@ -74,6 +118,11 @@ That's it. The system will:
 ```
 /track
 > "Mark the Amazon Supply Chain Analyst as applied"
+```
+
+**Open the web dashboard:**
+```
+/dashboard
 ```
 
 ---
@@ -101,9 +150,43 @@ Each job is scored across 7 dimensions:
 
 ### Report Files
 After each run, reports are saved to:
-- `output/report-YYYY-MM-DD.md` — Daily markdown report
+- `output/report-YYYY-MM-DD.md` — Daily markdown report (4 panels)
 - `output/jobs-YYYY-MM-DD.csv` — Full CSV export (all scored jobs)
 - `output/skills-gap-YYYY-MM-DD.md` — Skills gap analysis
+
+---
+
+## Search Strategy
+
+### 23 Search Queries Across 3 Tiers
+
+**Primary (highest signal):**
+- supply chain analyst, operations analyst, supply chain risk
+- procurement analyst, demand planning analyst, logistics analyst
+- program manager operations, program manager supply chain
+- supply chain intern 2026, supply chain intern 2027
+- operations intern 2027, program manager intern 2027
+- supply chain new grad, supply chain new grad 2027
+- procurement intern, logistics intern 2027
+
+**Secondary:**
+- process improvement analyst, business operations analyst
+- compliance analyst, operations new grad 2027
+
+**Stretch:**
+- inventory analyst, strategic sourcing analyst, S&OP analyst
+
+### Internship & New Grad Strategy
+- Searches include year tags (2026, 2027) to catch cycle-specific postings
+- Big company internship postings are **seasonal** — they open Aug-Sep for following summer
+- The system will automatically pick these up when they start appearing
+- Both `fulltime` and `internship` job types are scraped separately
+
+### Location Coverage
+
+**Seattle & Area (priority):** Seattle, Bellevue, Kirkland, Redmond, Tacoma, Everett
+
+**National:** San Francisco, San Jose, Los Angeles, New York, Chicago, Austin, Dallas, Atlanta, Boston, Denver, Remote
 
 ---
 
@@ -114,9 +197,10 @@ Edit `config/search_queries.json` to add/remove search queries:
 ```json
 {
   "search_term": "your new search term",
-  "category": "primary"  // or "secondary" or "stretch"
+  "category": "primary"
 }
 ```
+Or use the `/add-search` command.
 
 ### Adjusting Target Locations
 Edit `config/profile.json` → `search_preferences`:
@@ -159,6 +243,9 @@ Each project includes:
 3. **Procurement Spend Analytics in Power BI** — DAX, data modeling
 4. **SAP S/4HANA Supply Chain Simulation** — ERP navigation, MM/PP modules
 
+### How Projects Are Chosen
+Projects aren't random — they're generated based on which skills appear most often in the highest-scoring job listings that Bhumika hasn't yet demonstrated. As more jobs are scraped and scored, the recommendations get more targeted.
+
 ---
 
 ## Application Tracking
@@ -169,10 +256,10 @@ Tell Claude: "Mark [job] at [company] as [status]"
 Valid statuses:
 - `new` — Just identified, not acted on
 - `applied` — Application submitted
+- `skipped` — Decided not to apply
 - `interviewing` — In interview process
 - `offer` — Received offer
 - `rejected` — Didn't get it
-- `skipped` — Decided not to apply
 
 ### Setting Follow-ups
 "Set follow-up for [job] on [date]" — Claude will remind you when it's due.
@@ -197,6 +284,9 @@ Edit `config/profile.json` → `search_preferences` → `min_salary`.
 ### Exclude Certain Roles
 Edit `config/profile.json` → `search_preferences` → `exclude_terms` (e.g., add "warehouse associate" if getting irrelevant results).
 
+### Switch Scoring Model
+Edit `src/scorer.py` → `BEDROCK_MODEL` to use a different Claude model (e.g., Haiku for faster/cheaper, Opus for more accurate).
+
 ---
 
 ## Troubleshooting
@@ -204,14 +294,28 @@ Edit `config/profile.json` → `search_preferences` → `exclude_terms` (e.g., a
 ### "No new jobs found"
 - The system only shows NEW jobs (not previously seen). If you ran it recently, there may genuinely be no new postings.
 - Try widening the search: increase `hours_old` to 72 or 168 (1 week).
+- Indeed is the most reliable source (no rate limiting).
+
+### "No internships found"
+- Internship postings are **seasonal**. Big companies post summer internships in Aug-Oct.
+- The year-tagged searches (2027, 2026) will catch them automatically when they appear.
+- Try checking Indeed/LinkedIn directly for "supply chain intern" to see current availability.
 
 ### Scoring not working
-- Scoring runs inline within Claude Code (uses your corporate Claude access).
+- Scoring runs inline within Claude Code (uses your corporate Claude access via Bedrock).
 - If Claude Code is working (you're reading this!), scoring will work too.
+- No separate API key is needed.
 
 ### Too many irrelevant results
 - Add exclusion terms to `config/profile.json` → `exclude_terms`
-- Adjust scoring weights to penalize poor matches harder
+- Adjust the minimum score in `/find-jobs` or the dashboard sidebar
+- Remove search queries that produce noise from `config/search_queries.json`
+
+### Dashboard won't start
+```bash
+pip install streamlit  # Ensure installed
+streamlit run app.py --server.port 8501
+```
 
 ### Want to start fresh
 ```bash
@@ -229,21 +333,27 @@ You say "/find-jobs"
 ┌─────────────────┐     ┌──────────────────┐
 │  JobSpy Scraper │────▶│  SQLite Database  │
 │  (4 job boards) │     │  (dedup + store)  │
-└─────────────────┘     └────────┬─────────┘
-                                 │
-                                 ▼
+│  23 queries     │     │  89+ jobs/day     │
+│  17 locations   │     └────────┬─────────┘
+│  FT + Intern    │              │
+└─────────────────┘              ▼
                     ┌────────────────────────┐
                     │  Claude Inline Scoring  │
                     │  (7 dimensions, 0-100)  │
+                    │  Batch mode (efficient) │
                     └────────────┬───────────┘
                                  │
-                    ┌────────────▼───────────┐
-                    │     4-Panel Report      │
-                    │  Seattle FT | Intern    │
-                    │  National FT | Intern   │
+         ┌───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│  4-Panel Report │   │  Web Dashboard  │   │  Skills Gap +   │
+│  (Markdown/CSV) │   │  (Streamlit)    │   │  Projects Gen   │
+└─────────────────┘   └─────────────────┘   └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 ▼
+                    ┌────────────────────────┐
+                    │  Application Tracker   │
+                    │  (status + follow-ups) │
                     └────────────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                   ▼
-     Skills Gap Report    Project Generator    Application Tracker
 ```
