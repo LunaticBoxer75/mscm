@@ -27,6 +27,7 @@ python -m src.pipeline report    # Just generate report
 - `/add-search` — Add a new search query
 - `/generate-projects` — Analyze skill gaps and create portfolio project guides
 - `/track` — Application tracker: update status, set follow-ups, view pipeline
+- `/dashboard` — Launch Streamlit web UI (localhost:8501)
 
 ## Architecture
 
@@ -91,6 +92,8 @@ Search radius: 50 miles.
 - `pandas` — Data manipulation
 - `rich` — Terminal output formatting
 - `sqlite3` — Local dedup and history database
+- `streamlit` — Web dashboard UI
+- `firebase-admin` — Google Firebase sync (optional, for cloud access)
 
 ## Notes
 
