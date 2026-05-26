@@ -59,11 +59,11 @@
       "Procurement Analyst",
       "Demand Planning Analyst",
       "Logistics Analyst",
-      "Supply Chain Operations Manager"
+      "Supply Chain Operations Manager",
+      "Program Manager",
+      "Technical Program Manager"
     ],
     "secondary": [
-      "Program Manager",
-      "Technical Program Manager",
       "Process Improvement Manager",
       "Operations Manager",
       "Business Operations Analyst",
@@ -108,15 +108,30 @@
     ]
   },
   "search_preferences": {
-    "locations": [
+    "locations_seattle": [
       "Seattle, WA",
       "Bellevue, WA",
+      "Kirkland, WA",
       "Redmond, WA",
       "Tacoma, WA",
+      "Everett, WA"
+    ],
+    "locations_national": [
+      "San Francisco, CA",
+      "San Jose, CA",
+      "Los Angeles, CA",
+      "New York, NY",
+      "Chicago, IL",
+      "Austin, TX",
+      "Dallas, TX",
+      "Atlanta, GA",
+      "Boston, MA",
+      "Denver, CO",
       "Remote"
     ],
-    "distance_miles": 50,
+    "distance_miles": 30,
     "job_types": ["fulltime", "internship"],
+    "scrape_job_types_separately": true,
     "hours_old": 24,
     "results_per_search": 25,
     "country": "USA",

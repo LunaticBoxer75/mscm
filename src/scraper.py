@@ -45,9 +45,15 @@ def get_db():
             score_breakdown TEXT,
             scored_at TEXT,
             is_remote INTEGER DEFAULT 0,
-            notified INTEGER DEFAULT 0
+            notified INTEGER DEFAULT 0,
+            region TEXT DEFAULT 'seattle'
         )
     """)
+    # Add region column if upgrading from old schema
+    try:
+        conn.execute("ALTER TABLE jobs ADD COLUMN region TEXT DEFAULT 'seattle'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -59,8 +65,11 @@ def generate_job_id(row):
     return str(hash(f"{row.get('title', '')}-{row.get('company', '')}-{row.get('location', '')}"))
 
 
-def scrape_all_jobs(sites=None, hours_old=None):
-    """Scrape jobs from all configured queries and return new (unseen) jobs."""
+def scrape_all_jobs(sites=None, hours_old=None, region=None):
+    """Scrape jobs from all configured queries and return new (unseen) jobs.
+
+    region: 'seattle', 'national', or None (both).
+    """
     profile, queries = load_config()
     prefs = profile["search_preferences"]
 
@@ -69,77 +78,92 @@ def scrape_all_jobs(sites=None, hours_old=None):
     if hours_old is None:
         hours_old = prefs["hours_old"]
 
+    locations_seattle = prefs["locations_seattle"]
+    locations_national = prefs["locations_national"]
+
+    if region == "seattle":
+        location_groups = [("seattle", locations_seattle)]
+    elif region == "national":
+        location_groups = [("national", locations_national)]
+    else:
+        location_groups = [("seattle", locations_seattle), ("national", locations_national)]
+
+    job_types_to_scrape = prefs["job_types"]
+
     conn = get_db()
     all_new_jobs = []
 
-    for query in queries["queries"]:
-        search_term = query["search_term"]
-        category = query["category"]
+    for region_tag, locations in location_groups:
+        for jtype in job_types_to_scrape:
+            for query in queries["queries"]:
+                search_term = query["search_term"]
+                category = query["category"]
 
-        for location in prefs["locations"]:
-            if location == "Remote":
-                continue
+                for location in locations:
+                    if location == "Remote":
+                        continue
 
-            try:
-                jobs_df = scrape_jobs(
-                    site_name=sites,
-                    search_term=search_term,
-                    location=location,
-                    results_wanted=prefs["results_per_search"],
-                    hours_old=hours_old,
-                    country_indeed=prefs["country"],
-                    job_type="fulltime",
-                    description_format="markdown",
-                    verbose=0,
-                )
-            except Exception as e:
-                print(f"  [!] Error scraping '{search_term}' in {location}: {e}")
-                continue
+                    try:
+                        jobs_df = scrape_jobs(
+                            site_name=sites,
+                            search_term=search_term,
+                            location=location,
+                            results_wanted=prefs["results_per_search"],
+                            hours_old=hours_old,
+                            country_indeed=prefs["country"],
+                            job_type=jtype,
+                            description_format="markdown",
+                            verbose=0,
+                        )
+                    except Exception as e:
+                        print(f"  [!] Error scraping '{search_term}' ({jtype}) in {location}: {e}")
+                        continue
 
-            if jobs_df is None or jobs_df.empty:
-                continue
+                    if jobs_df is None or jobs_df.empty:
+                        continue
 
-            for _, row in jobs_df.iterrows():
-                job_id = generate_job_id(row)
+                    for _, row in jobs_df.iterrows():
+                        job_id = generate_job_id(row)
 
-                existing = conn.execute(
-                    "SELECT job_id FROM jobs WHERE job_id = ?", (job_id,)
-                ).fetchone()
-                if existing:
-                    continue
+                        existing = conn.execute(
+                            "SELECT job_id FROM jobs WHERE job_id = ?", (job_id,)
+                        ).fetchone()
+                        if existing:
+                            continue
 
-                is_remote = 1 if row.get("is_remote") else 0
-                job_data = {
-                    "job_id": job_id,
-                    "title": str(row.get("title", "")),
-                    "company": str(row.get("company", "")),
-                    "location": str(row.get("location", "")),
-                    "job_url": str(row.get("job_url", "")),
-                    "description": str(row.get("description", ""))[:10000],
-                    "job_type": str(row.get("job_type", "")),
-                    "date_posted": str(row.get("date_posted", "")),
-                    "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
-                    "salary_max": float(row["max_amount"]) if pd.notna(row.get("max_amount")) else None,
-                    "salary_currency": str(row.get("currency", "USD")),
-                    "source": str(row.get("site", "")),
-                    "search_term": search_term,
-                    "search_category": category,
-                    "scraped_at": datetime.now().isoformat(),
-                    "is_remote": is_remote,
-                }
+                        is_remote = 1 if row.get("is_remote") else 0
+                        job_data = {
+                            "job_id": job_id,
+                            "title": str(row.get("title", "")),
+                            "company": str(row.get("company", "")),
+                            "location": str(row.get("location", "")),
+                            "job_url": str(row.get("job_url", "")),
+                            "description": str(row.get("description", ""))[:10000],
+                            "job_type": jtype,
+                            "date_posted": str(row.get("date_posted", "")),
+                            "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
+                            "salary_max": float(row["max_amount"]) if pd.notna(row.get("max_amount")) else None,
+                            "salary_currency": str(row.get("currency", "USD")),
+                            "source": str(row.get("site", "")),
+                            "search_term": search_term,
+                            "search_category": category,
+                            "scraped_at": datetime.now().isoformat(),
+                            "is_remote": is_remote,
+                            "region": region_tag,
+                        }
 
-                conn.execute("""
-                    INSERT OR IGNORE INTO jobs
-                    (job_id, title, company, location, job_url, description, job_type,
-                     date_posted, salary_min, salary_max, salary_currency, source,
-                     search_term, search_category, scraped_at, is_remote)
-                    VALUES (:job_id, :title, :company, :location, :job_url, :description,
-                            :job_type, :date_posted, :salary_min, :salary_max,
-                            :salary_currency, :source, :search_term, :search_category,
-                            :scraped_at, :is_remote)
-                """, job_data)
+                        conn.execute("""
+                            INSERT OR IGNORE INTO jobs
+                            (job_id, title, company, location, job_url, description, job_type,
+                             date_posted, salary_min, salary_max, salary_currency, source,
+                             search_term, search_category, scraped_at, is_remote, region)
+                            VALUES (:job_id, :title, :company, :location, :job_url, :description,
+                                    :job_type, :date_posted, :salary_min, :salary_max,
+                                    :salary_currency, :source, :search_term, :search_category,
+                                    :scraped_at, :is_remote, :region)
+                        """, job_data)
 
-                all_new_jobs.append(job_data)
+                        all_new_jobs.append(job_data)
 
     conn.commit()
     conn.close()

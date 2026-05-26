@@ -1,15 +1,17 @@
-"""AI-powered job scoring using Claude to match jobs against candidate profile."""
+"""Job scoring engine. Provides the scoring prompt and logic.
+
+Scoring is designed to run within Claude Code — the /find-jobs command
+reads unscored jobs and has Claude score them inline using the corporate
+Bedrock access that Claude Code already has.
+
+This module can also be called programmatically if Bedrock access is
+available directly (e.g., via ada credentials with bedrock:InvokeModel).
+"""
 
 import json
-import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-import anthropic
-
 from .scraper import get_unscored_jobs, update_job_score
-
-load_dotenv(Path(__file__).parent.parent / ".env")
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
@@ -22,7 +24,7 @@ SCORING_PROMPT = """You are a career advisor scoring job listings for a candidat
 1. **Role Relevance** (25%): How well does the job title and responsibilities align with target roles?
 2. **Skills Match** (20%): How many of the candidate's skills (fraud detection, risk analysis, process optimization, data analysis, project management, SQL, automation) are relevant?
 3. **Experience Fit** (15%): Is the experience level appropriate? (Candidate has 3 years. Entry-level to mid-level roles are ideal. Senior/Director roles should score lower.)
-4. **Location Match** (15%): Is it in Seattle/Bellevue/Redmond/WA area or remote?
+4. **Location Match** (15%): Is it in Seattle/Bellevue/Redmond/Kirkland/WA area or remote?
 5. **Company Tier** (10%): Is this a well-known company or one aligned with supply chain (Amazon, Boeing, Costco, etc.)?
 6. **Growth Potential** (10%): Does this role offer career growth into supply chain leadership?
 7. **Visa Friendliness** (5%): Large companies and those known for H1B/OPT sponsorship score higher.
@@ -73,8 +75,8 @@ def get_profile_summary():
 - Target Roles (Secondary): {', '.join(targets['secondary'][:4])}"""
 
 
-def score_job(client, job, profile_summary):
-    """Score a single job using Claude."""
+def build_scoring_prompt(job):
+    """Build the scoring prompt for a single job. Used by Claude Code inline scoring."""
     salary_str = "Not specified"
     if job.get("salary_min") and job.get("salary_max"):
         salary_str = f"${job['salary_min']:,.0f} - ${job['salary_max']:,.0f}"
@@ -85,8 +87,8 @@ def score_job(client, job, profile_summary):
     if len(description) > 4000:
         description = description[:4000] + "\n...[truncated]"
 
-    prompt = SCORING_PROMPT.format(
-        profile_summary=profile_summary,
+    return SCORING_PROMPT.format(
+        profile_summary=get_profile_summary(),
         title=job.get("title", "Unknown"),
         company=job.get("company", "Unknown"),
         location=job.get("location", "Unknown"),
@@ -95,46 +97,95 @@ def score_job(client, job, profile_summary):
         description=description,
     )
 
+
+def batch_score_prompt(jobs):
+    """Build a batch scoring prompt for multiple jobs at once (more efficient)."""
+    profile_summary = get_profile_summary()
+
+    jobs_text = []
+    for i, job in enumerate(jobs, 1):
+        salary_str = "Not specified"
+        if job.get("salary_min") and job.get("salary_max"):
+            salary_str = f"${job['salary_min']:,.0f} - ${job['salary_max']:,.0f}"
+        elif job.get("salary_min"):
+            salary_str = f"${job['salary_min']:,.0f}+"
+
+        description = job.get("description", "No description available")
+        if len(description) > 2000:
+            description = description[:2000] + "...[truncated]"
+
+        jobs_text.append(f"""### Job {i} (ID: {job['job_id']})
+**Title:** {job.get('title', 'Unknown')}
+**Company:** {job.get('company', 'Unknown')}
+**Location:** {job.get('location', 'Unknown')}
+**Type:** {job.get('job_type', 'Unknown')}
+**Salary:** {salary_str}
+**Description:** {description}
+""")
+
+    return f"""You are a career advisor scoring job listings for a candidate.
+
+## Candidate Profile
+{profile_summary}
+
+## Scoring Criteria
+1. Role Relevance (25%): Alignment with SCM/ops/PM target roles
+2. Skills Match (20%): Overlap with candidate's skills
+3. Experience Fit (15%): Appropriate for 3yr experience level
+4. Location Match (15%): Seattle/WA area or remote
+5. Company Tier (10%): Known SCM companies
+6. Growth Potential (10%): Career trajectory
+7. Visa Friendliness (5%): OPT/H1B likelihood
+
+## Jobs to Score
+
+{"".join(jobs_text)}
+
+## Instructions
+Score ALL jobs above. Return a JSON array with one entry per job:
+[
+  {{
+    "job_id": "<from above>",
+    "score": <0-100>,
+    "reasoning": "<1-2 sentences>",
+    "highlights": ["<key strengths>"],
+    "red_flags": ["<concerns if any>"]
+  }},
+  ...
+]
+
+Return ONLY the JSON array, no other text."""
+
+
+def parse_batch_scores(response_text, jobs):
+    """Parse batch scoring response and update database."""
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        result_text = response.content[0].text.strip()
-        if result_text.startswith("```"):
-            result_text = result_text.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(result_text)
-    except (json.JSONDecodeError, IndexError, KeyError) as e:
-        return {"score": 0, "reasoning": f"Scoring failed: {e}", "red_flags": ["parse_error"], "highlights": []}
-    except anthropic.APIError as e:
-        return {"score": 0, "reasoning": f"API error: {e}", "red_flags": ["api_error"], "highlights": []}
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1].rsplit("```", 1)[0]
+        scores = json.loads(response_text)
+    except json.JSONDecodeError:
+        return []
+
+    results = []
+    for score_entry in scores:
+        job_id = score_entry.get("job_id")
+        score = score_entry.get("score", 0)
+        if job_id:
+            update_job_score(job_id, score, score_entry)
+            results.append(score_entry)
+    return results
 
 
 def score_all_pending(limit=50):
-    """Score all unscored jobs."""
+    """Get unscored jobs for manual/inline scoring. Returns jobs + prompts."""
     jobs = get_unscored_jobs(limit=limit)
-    if not jobs:
-        return []
-
-    client = anthropic.Anthropic()
-    profile_summary = get_profile_summary()
-    scored = []
-
-    for job in jobs:
-        result = score_job(client, job, profile_summary)
-        score = result.get("score", 0)
-        update_job_score(job["job_id"], score, result)
-        scored.append({**job, "score": score, "score_breakdown": result})
-
-    return scored
+    return jobs
 
 
 if __name__ == "__main__":
     from rich.console import Console
     console = Console()
-    console.print("[bold]Scoring pending jobs...[/bold]")
-    results = score_all_pending()
-    console.print(f"[green]Scored {len(results)} jobs[/green]")
-    for r in sorted(results, key=lambda x: x["score"], reverse=True)[:5]:
-        console.print(f"  [{r['score']}] {r['title']} @ {r['company']}")
+    jobs = score_all_pending()
+    console.print(f"[bold]{len(jobs)} jobs awaiting scoring[/bold]")
+    if jobs:
+        console.print("\nTo score, run /find-jobs in Claude Code (uses inline Claude scoring)")
