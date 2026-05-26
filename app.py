@@ -93,20 +93,11 @@ def get_applications():
 
 
 def update_application(job_id, status, notes=None, follow_up_date=None):
-    ensure_tracker_table()
-    conn = get_conn()
-    now = datetime.now().isoformat()
-    conn.execute("""
-        INSERT INTO applications (job_id, status, applied_date, notes, follow_up_date, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-            status = excluded.status,
-            notes = excluded.notes,
-            follow_up_date = excluded.follow_up_date,
-            updated_at = excluded.updated_at
-    """, (job_id, status, now if status == "applied" else None, notes, follow_up_date, now))
-    conn.commit()
-    conn.close()
+    """Update application status — uses tracker module which auto-syncs to Firebase."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent / "src"))
+    from src.tracker import update_status
+    update_status(job_id, status, notes, follow_up_date)
 
 
 # --- HEADER ---

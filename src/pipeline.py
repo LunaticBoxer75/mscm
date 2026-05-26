@@ -75,6 +75,15 @@ def run_full_pipeline(hours_old=24, score_limit=50, skip_scrape=False, skip_scor
         for c in stats["top_companies"][:5]:
             console.print(f"  {c['company']}: {c['avg_score']} avg ({c['count']} jobs)")
 
+    # Sync to Firebase
+    try:
+        from .firebase_db import sync_full_db, is_available
+        if is_available():
+            result = sync_full_db()
+            console.print(f"\n  [blue]Firebase synced: {result['jobs']} jobs, {result['applications']} apps[/blue]")
+    except Exception:
+        pass
+
     console.print(f"\n[bold green]Pipeline complete![/bold green]")
     return report
 

@@ -76,8 +76,21 @@ Run the full MSCM job search pipeline: scrape job boards, score against Bhumika'
    "
    ```
 
+8. Sync everything to Firebase (ensures cloud is up-to-date):
+   ```
+   cd /Users/aniketsw/workspaces/mscm && python -c "
+   from src.firebase_db import sync_full_db, is_available
+   if is_available():
+       result = sync_full_db()
+       print(f'Firebase synced: {result[\"jobs\"]} jobs, {result[\"applications\"]} applications')
+   else:
+       print('Firebase not configured — skipping cloud sync')
+   "
+   ```
+
 ## Key Files
 - Config: `config/profile.json` (candidate profile + scoring weights)
 - Queries: `config/search_queries.json` (search terms by category)
 - Output: `output/report-YYYY-MM-DD.md` (daily reports)
 - Database: `data/jobs.db` (SQLite - all scraped jobs + scores)
+- Cloud: Firebase project `mscm-5591c` (auto-synced)
