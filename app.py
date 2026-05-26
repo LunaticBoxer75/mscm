@@ -155,7 +155,7 @@ with tab_jobs:
         "National Full-Time", "National Internships", "All"
     ])
 
-    def render_job_table(df, tab_name):
+    def render_job_table(df, tab_name, key_suffix=""):
         if df.empty:
             st.info(f"No {tab_name} jobs found matching filters.")
             return
@@ -175,7 +175,7 @@ with tab_jobs:
             "date_posted": "Posted",
         })
 
-        st.dataframe(
+        event = st.dataframe(
             display_df,
             column_config={
                 "Link": st.column_config.LinkColumn("Apply", display_text="Apply →"),
@@ -183,76 +183,94 @@ with tab_jobs:
             },
             hide_index=True,
             use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=f"table_{tab_name}_{key_suffix}",
         )
+
+        # If a row is selected in this table, store it in session state
+        if event and event.selection and event.selection.rows:
+            selected_row_idx = event.selection.rows[0]
+            original_idx = df.index[selected_row_idx]
+            st.session_state["selected_job_idx"] = original_idx
 
     with sub_tab1:
         seattle_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
         untagged_ft = jobs[(jobs["region"].isna()) & (jobs["job_type"] != "internship")]
         seattle_ft = pd.concat([seattle_ft, untagged_ft])
-        render_job_table(seattle_ft, "Seattle full-time")
+        render_job_table(seattle_ft, "Seattle full-time", "sea_ft")
 
     with sub_tab2:
         seattle_intern = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
         untagged_intern = jobs[(jobs["region"].isna()) & (jobs["job_type"] == "internship")]
         seattle_intern = pd.concat([seattle_intern, untagged_intern])
-        render_job_table(seattle_intern, "Seattle internship")
+        render_job_table(seattle_intern, "Seattle internship", "sea_int")
 
     with sub_tab3:
         national_ft = jobs[(jobs["region"] == "national") & (jobs["job_type"] != "internship")]
-        render_job_table(national_ft, "National full-time")
+        render_job_table(national_ft, "National full-time", "nat_ft")
 
     with sub_tab4:
         national_intern = jobs[(jobs["region"] == "national") & (jobs["job_type"] == "internship")]
-        render_job_table(national_intern, "National internship")
+        render_job_table(national_intern, "National internship", "nat_int")
 
     with sub_tab5:
-        render_job_table(jobs, "all")
+        render_job_table(jobs, "all", "all")
 
-    # Job detail expander
+    # Job detail panel — driven by table row selection
     if not jobs.empty:
         st.divider()
         st.subheader("Job Details")
+
+        selected_idx = st.session_state.get("selected_job_idx")
+
+        # Validate the selection is still in current filtered jobs
+        if selected_idx is None or selected_idx not in jobs.index:
+            selected_idx = jobs.index[0]
+
+        # Show which job is selected (also allow manual override via dropdown)
         selected_idx = st.selectbox(
-            "Select a job:",
+            "Selected job (click a row above to change):",
             options=jobs.index,
+            index=list(jobs.index).index(selected_idx) if selected_idx in jobs.index else 0,
             format_func=lambda i: f"[{int(jobs.loc[i, 'score'])}] {jobs.loc[i, 'title']} @ {jobs.loc[i, 'company']}",
+            key="detail_select",
         )
 
-        if selected_idx is not None:
-            job = jobs.loc[selected_idx]
-            col1, col2 = st.columns([2, 1])
+        job = jobs.loc[selected_idx]
+        col1, col2 = st.columns([2, 1])
 
-            with col1:
-                st.markdown(f"### {job['title']}")
-                st.markdown(f"**{job['company']}** — {job['location']}")
-                if job.get("job_url"):
-                    st.markdown(f"[Apply Here]({job['job_url']})")
-                if job.get("description"):
-                    with st.expander("Full Description", expanded=False):
-                        st.markdown(str(job["description"])[:3000])
+        with col1:
+            st.markdown(f"### {job['title']}")
+            st.markdown(f"**{job['company']}** — {job['location']}")
+            if job.get("job_url"):
+                st.markdown(f"[Apply Here]({job['job_url']})")
+            if job.get("description"):
+                with st.expander("Full Description", expanded=False):
+                    st.markdown(str(job["description"])[:3000])
 
-            with col2:
-                st.metric("Overall Score", f"{int(job['score'])}/100")
-                if job.get("score_breakdown"):
-                    try:
-                        breakdown = json.loads(job["score_breakdown"]) if isinstance(job["score_breakdown"], str) else {}
-                        if breakdown.get("reasoning"):
-                            st.info(breakdown["reasoning"])
-                        if breakdown.get("highlights"):
-                            st.success("**Highlights:** " + ", ".join(breakdown["highlights"]))
-                        if breakdown.get("red_flags") and breakdown["red_flags"]:
-                            st.warning("**Concerns:** " + ", ".join(breakdown["red_flags"]))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+        with col2:
+            st.metric("Overall Score", f"{int(job['score'])}/100")
+            if job.get("score_breakdown"):
+                try:
+                    breakdown = json.loads(job["score_breakdown"]) if isinstance(job["score_breakdown"], str) else {}
+                    if breakdown.get("reasoning"):
+                        st.info(breakdown["reasoning"])
+                    if breakdown.get("highlights"):
+                        st.success("**Highlights:** " + ", ".join(breakdown["highlights"]))
+                    if breakdown.get("red_flags") and breakdown["red_flags"]:
+                        st.warning("**Concerns:** " + ", ".join(breakdown["red_flags"]))
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-                # Quick action: track this job
-                st.divider()
-                track_status = st.selectbox("Track:", ["—", "applied", "interviewing", "skipped"], key="track_status")
-                if track_status != "—":
-                    if st.button("Update Status"):
-                        update_application(job["job_id"], track_status)
-                        st.success(f"Marked as {track_status}!")
-                        st.rerun()
+            # Quick action: track this job
+            st.divider()
+            track_status = st.selectbox("Track:", ["—", "applied", "interviewing", "skipped"], key="track_status")
+            if track_status != "—":
+                if st.button("Update Status"):
+                    update_application(job["job_id"], track_status)
+                    st.success(f"Marked as {track_status}!")
+                    st.rerun()
 
 # ============================================================
 # TAB 2: APPLICATION TRACKER
