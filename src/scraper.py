@@ -132,14 +132,20 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                             continue
 
                         is_remote = 1 if row.get("is_remote") else 0
+                        title_str = str(row.get("title", ""))
+                        # Override job_type if title clearly indicates intern/co-op
+                        effective_type = jtype
+                        if any(kw in title_str.lower() for kw in ["intern", "co-op", "coop", "new grad"]):
+                            effective_type = "internship"
+
                         job_data = {
                             "job_id": job_id,
-                            "title": str(row.get("title", "")),
+                            "title": title_str,
                             "company": str(row.get("company", "")),
                             "location": str(row.get("location", "")),
                             "job_url": str(row.get("job_url", "")),
                             "description": str(row.get("description", ""))[:10000],
-                            "job_type": jtype,
+                            "job_type": effective_type,
                             "date_posted": str(row.get("date_posted", "")),
                             "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
                             "salary_max": float(row["max_amount"]) if pd.notna(row.get("max_amount")) else None,
