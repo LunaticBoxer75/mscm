@@ -167,6 +167,15 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
 
     conn.commit()
     conn.close()
+
+    # Auto-sync new jobs to Firebase
+    if all_new_jobs:
+        try:
+            from .firebase_db import sync_jobs
+            sync_jobs(all_new_jobs)
+        except Exception:
+            pass
+
     return all_new_jobs
 
 
@@ -194,6 +203,13 @@ def update_job_score(job_id, score, breakdown):
     """, (score, json.dumps(breakdown), datetime.now().isoformat(), job_id))
     conn.commit()
     conn.close()
+
+    # Auto-sync score to Firebase
+    try:
+        from .firebase_db import sync_scores
+        sync_scores([{"job_id": job_id, "score": score, "score_breakdown": breakdown}])
+    except Exception:
+        pass
 
 
 def get_top_jobs(min_score=60, limit=20):

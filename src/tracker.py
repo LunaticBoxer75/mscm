@@ -48,6 +48,13 @@ def update_status(job_id, status, notes=None, follow_up_date=None):
     conn.commit()
     conn.close()
 
+    # Auto-sync to Firebase
+    try:
+        from .firebase_db import sync_application
+        sync_application(job_id, status, notes, follow_up_date)
+    except Exception:
+        pass
+
 
 def get_application_summary():
     """Get counts by status."""
