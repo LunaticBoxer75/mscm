@@ -1,0 +1,142 @@
+{
+  "candidate": {
+    "name": "Bhumika Choudhary",
+    "email": "bhumichoudhary88@gmail.com",
+    "phone": "+919666597222",
+    "location": "Hyderabad, India",
+    "target_location": "Seattle, WA",
+    "linkedin": "bhummika",
+    "program": "Master of Supply Chain Management (MSCM)",
+    "university": "University of Washington - Foster School of Business",
+    "program_start": "2026-09",
+    "visa_status": "F1_student",
+    "work_authorization": "OPT/CPT eligible (STEM designated program - 3 year OPT)"
+  },
+  "experience_summary": {
+    "years": 3,
+    "current_role": "Global SME - Risk and Compliance Team",
+    "current_company": "Uber",
+    "domain_expertise": [
+      "fraud_detection_and_risk_analysis",
+      "process_optimization_and_automation",
+      "data_analysis_and_insights",
+      "project_management",
+      "stakeholder_management",
+      "cross_functional_execution",
+      "quality_frameworks",
+      "sop_design_and_standardization"
+    ],
+    "tools": [
+      "JIRA",
+      "SQL",
+      "Google Workspace",
+      "Lucidchart",
+      "Data Visualization (pivot tables, trend charts)"
+    ],
+    "certifications": [
+      "Lean Six Sigma Yellow Belt (AIGPE)",
+      "PMP Trained"
+    ],
+    "education": {
+      "bachelors": "B.Sc, St. Francis College for Women (CGPA 9.0, 2019-2022)"
+    }
+  },
+  "key_achievements": [
+    "40% reduction in minor errors through quality frameworks",
+    "Managed 5000+ case global JIRA appeals queue",
+    "Reduced SME intervention time by 60% via automated chatbot",
+    "Reduced escalation time by 80% via AI video translation agent",
+    "Cut manual dependency by 95% through automation",
+    "Finalist in Uber's internal Pitch Project (Dedupe^2)",
+    "Identified 80% fraudulent profiles via triage process",
+    "Spotlight Award winner (twice)"
+  ],
+  "target_roles": {
+    "primary": [
+      "Supply Chain Analyst",
+      "Operations Analyst",
+      "Supply Chain Risk Analyst",
+      "Procurement Analyst",
+      "Demand Planning Analyst",
+      "Logistics Analyst",
+      "Supply Chain Operations Manager"
+    ],
+    "secondary": [
+      "Program Manager",
+      "Technical Program Manager",
+      "Process Improvement Manager",
+      "Operations Manager",
+      "Business Operations Analyst",
+      "Compliance Analyst",
+      "Risk Analyst"
+    ],
+    "stretch": [
+      "Supply Chain Manager",
+      "Senior Operations Analyst",
+      "Strategic Sourcing Analyst",
+      "S&OP Analyst",
+      "Inventory Analyst"
+    ]
+  },
+  "target_companies": {
+    "tier1_seattle_scm": [
+      "Amazon",
+      "Microsoft",
+      "Boeing",
+      "Costco",
+      "Starbucks",
+      "T-Mobile",
+      "Nordstrom",
+      "REI",
+      "Brooks Running",
+      "Expedia"
+    ],
+    "tier2_national": [
+      "Apple",
+      "Google",
+      "Meta",
+      "Walmart",
+      "Target",
+      "Nike",
+      "Intel",
+      "Tesla",
+      "Uber",
+      "DHL",
+      "FedEx",
+      "Maersk",
+      "Flexport"
+    ]
+  },
+  "search_preferences": {
+    "locations": [
+      "Seattle, WA",
+      "Bellevue, WA",
+      "Redmond, WA",
+      "Tacoma, WA",
+      "Remote"
+    ],
+    "distance_miles": 50,
+    "job_types": ["fulltime", "internship"],
+    "hours_old": 24,
+    "results_per_search": 25,
+    "country": "USA",
+    "min_salary": 70000,
+    "exclude_terms": [
+      "senior director",
+      "VP",
+      "principal",
+      "staff engineer",
+      "10+ years",
+      "15+ years"
+    ]
+  },
+  "scoring_weights": {
+    "role_relevance": 0.25,
+    "skills_match": 0.20,
+    "experience_fit": 0.15,
+    "location_match": 0.15,
+    "company_tier": 0.10,
+    "growth_potential": 0.10,
+    "visa_friendliness": 0.05
+  }
+}

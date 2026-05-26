@@ -1,0 +1,58 @@
+{
+  "queries": [
+    {
+      "search_term": "supply chain analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "operations analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain risk",
+      "category": "primary"
+    },
+    {
+      "search_term": "procurement analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "demand planning analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "logistics analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "program manager operations",
+      "category": "secondary"
+    },
+    {
+      "search_term": "process improvement analyst",
+      "category": "secondary"
+    },
+    {
+      "search_term": "business operations analyst",
+      "category": "secondary"
+    },
+    {
+      "search_term": "compliance analyst",
+      "category": "secondary"
+    },
+    {
+      "search_term": "inventory analyst",
+      "category": "stretch"
+    },
+    {
+      "search_term": "strategic sourcing analyst",
+      "category": "stretch"
+    }
+  ],
+  "google_search_templates": [
+    "supply chain analyst jobs near Seattle, WA since yesterday",
+    "operations analyst jobs near Seattle, WA since yesterday",
+    "program manager supply chain jobs near Seattle, WA since yesterday",
+    "procurement logistics analyst jobs near Seattle, WA since yesterday"
+  ]
+}

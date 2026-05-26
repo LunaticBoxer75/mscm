@@ -1,0 +1,14 @@
+{
+  "tasks": [
+    {
+      "id": "2843acb4",
+      "cron": "23 8 * * 1-5",
+      "prompt": "Run the MSCM daily job search pipeline for Bhumika. Execute: cd /Users/aniketsw/workspaces/mscm && python -m src.pipeline scrape 2>&1 | tail -20. Then score any unscored jobs: cd /Users/aniketsw/workspaces/mscm && python -m src.pipeline score 2>&1 | tail -20. Then generate and display the report: cd /Users/aniketsw/workspaces/mscm && python -m src.pipeline report 2>&1 | tail -30. Summarize the top 5 matches briefly.",
+      "createdAt": 1779784988765,
+      "recurring": true,
+      "createdBySessionId": "a5b9248c-fcbb-45a3-9d66-746454c69afb",
+      "createdByPid": 12676,
+      "createdByProcStart": "Tue May 26 08:27:50 2026"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+python-jobspy>=1.1.79
+anthropic>=0.45.0
+pandas>=2.0.0
+sqlite-utils>=3.36
+rich>=13.0.0
+python-dotenv>=1.0.0
