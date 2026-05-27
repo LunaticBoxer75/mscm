@@ -140,29 +140,24 @@ with tab_jobs:
             if df.empty:
                 st.info(f"No {name} jobs matching filters.")
                 return
-            display = df[["score", "title", "company", "location", "job_url"]].copy()
+            display = df[["score", "title", "company", "location", "job_url"]].copy().reset_index(drop=False)
             display["score"] = display["score"].astype(int)
-            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location", "job_url": "Link"})
 
-            # Determine which row is currently selected
-            current_sel = st.session_state.get("selected_job_idx")
-            default_selection = []
-            if current_sel is not None and current_sel in df.index:
-                pos = list(df.index).index(current_sel)
-                default_selection = [pos]
-
-            event = st.dataframe(
-                display,
-                column_config={
-                    "Link": st.column_config.LinkColumn("Apply", display_text="Apply →"),
-                    "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-                },
-                hide_index=True, use_container_width=True,
-                on_select="rerun", selection_mode="single-row", key=key,
-            )
-            if event and event.selection and event.selection.rows:
-                row_idx = event.selection.rows[0]
-                st.session_state["selected_job_idx"] = df.index[row_idx]
+            # Show as clickable list of jobs
+            for i, row in display.iterrows():
+                col_btn, col_score, col_info, col_link = st.columns([0.5, 0.8, 5, 1.2])
+                with col_btn:
+                    if st.button("→", key=f"{key}_{i}"):
+                        st.session_state["selected_job_idx"] = row["index"]
+                with col_score:
+                    score = row["score"]
+                    color = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
+                    st.markdown(f"{color} **{score}**")
+                with col_info:
+                    st.markdown(f"**{row['title']}** @ {row['company']}  \n{row['location']}")
+                with col_link:
+                    if row.get("job_url"):
+                        st.markdown(f"[Apply →]({row['job_url']})")
 
         with sub_tabs[0]:
             sea_ft = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) != "internship")]
