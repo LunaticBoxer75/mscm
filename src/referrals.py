@@ -13,8 +13,8 @@ from pathlib import Path
 from .scraper import get_db
 
 # UW Foster MSCM alumni search
-FOSTER_ALUMNI_SEARCH = "https://www.linkedin.com/search/results/people/?keywords={keywords}&network=%5B%22F%22%2C%22S%22%5D&schoolFilter=%5B%221646%22%5D"
-# 1646 = University of Washington LinkedIn school ID
+FOSTER_ALUMNI_SEARCH = "https://www.linkedin.com/search/results/people/?keywords={keywords}&schoolFilter=%5B%222584%22%5D"
+# 2584 = University of Washington LinkedIn school ID
 
 # General people search at a company
 COMPANY_PEOPLE_SEARCH = "https://www.linkedin.com/search/results/people/?keywords={keywords}&company={company}"
@@ -81,7 +81,7 @@ def generate_referral_links(job):
     })
 
     # 4. UW Foster alumni at that company
-    foster_url = f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%221646%22%5D"
+    foster_url = f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D"
     links.append({
         "label": f"UW Foster alumni at {company}",
         "url": foster_url,
