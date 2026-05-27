@@ -118,10 +118,14 @@ def filter_jobs(df):
     if df.empty:
         return df
     filtered = df[df["score"] >= min_score].copy()
+    if "region" not in filtered.columns:
+        filtered["region"] = "seattle"
+    if "job_type" not in filtered.columns:
+        filtered["job_type"] = "fulltime"
     if region_filter != "All":
-        filtered = filtered[filtered.get("region", pd.Series(dtype=str)) == region_filter]
+        filtered = filtered[filtered["region"] == region_filter]
     if type_filter != "All":
-        filtered = filtered[filtered.get("job_type", pd.Series(dtype=str)) == type_filter]
+        filtered = filtered[filtered["job_type"] == type_filter]
     return filtered
 
 
@@ -158,18 +162,27 @@ with tab_jobs:
                         if row.get("job_url"):
                             st.markdown(f"<a href='{row['job_url']}' target='_blank' style='font-size:0.85em'>Apply→</a>", unsafe_allow_html=True)
 
+        # Ensure region and job_type columns exist with fillna
+        if "region" not in jobs.columns:
+            jobs["region"] = "seattle"
+        else:
+            jobs["region"] = jobs["region"].fillna("seattle")
+        if "job_type" not in jobs.columns:
+            jobs["job_type"] = "fulltime"
+        else:
+            jobs["job_type"] = jobs["job_type"].fillna("fulltime")
+
         with sub_tabs[0]:
-            sea_ft = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) != "internship")]
+            sea_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
             render_table(sea_ft, "Seattle full-time", "t_sea_ft")
         with sub_tabs[1]:
-            sea_int = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) == "internship")]
+            sea_int = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
             render_table(sea_int, "Seattle internship", "t_sea_int")
         with sub_tabs[2]:
-            nat_ft = jobs[jobs.get("region", pd.Series(dtype=str)) == "national"]
-            nat_ft = nat_ft[nat_ft.get("job_type", pd.Series(dtype=str)) != "internship"]
+            nat_ft = jobs[(jobs["region"] == "national") & (jobs["job_type"] != "internship")]
             render_table(nat_ft, "National full-time", "t_nat_ft")
         with sub_tabs[3]:
-            nat_int = jobs[(jobs.get("region", pd.Series(dtype=str)) == "national") & (jobs.get("job_type", pd.Series(dtype=str)) == "internship")]
+            nat_int = jobs[(jobs["region"] == "national") & (jobs["job_type"] == "internship")]
             render_table(nat_int, "National internship", "t_nat_int")
         with sub_tabs[4]:
             render_table(jobs, "all", "t_all")
@@ -230,9 +243,14 @@ with tab_jobs:
                     if job_url:
                         st.link_button("📝 Apply Now", job_url, use_container_width=True)
                 with act_cols[1]:
-                    connect_msg = f"Hi! I'm an incoming MSCM student at UW Foster with 3 years of operations experience at Uber. I saw the {title} role at {company} and would love to connect and learn more about your team."
+                    connect_msg = f"""Hi [Name],
+
+I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations experience at Uber. I came across the {title} role at {company} and noticed your work there. Would love to connect and learn about your experience on the team.
+
+Thanks!
+Bhumika"""
                     st.code(connect_msg, language=None)
-                    st.caption("👆 Copy this → paste into LinkedIn connection request note")
+                    st.caption("👆 Copy → replace [Name] → paste into LinkedIn connection note (300 char limit for notes, full version for InMail/DM)")
 
                 # Row 2: Referral search links
                 st.markdown("#### 🤝 Find People at " + company)
