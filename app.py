@@ -143,21 +143,20 @@ with tab_jobs:
             display = df[["score", "title", "company", "location", "job_url"]].copy().reset_index(drop=False)
             display["score"] = display["score"].astype(int)
 
-            # Show as clickable list of jobs
-            for i, row in display.iterrows():
-                col_btn, col_score, col_info, col_link = st.columns([0.5, 0.8, 5, 1.2])
-                with col_btn:
-                    if st.button("→", key=f"{key}_{i}"):
-                        st.session_state["selected_job_idx"] = row["index"]
-                with col_score:
+            # Scrollable container with compact rows
+            with st.container(height=400):
+                for i, row in display.iterrows():
+                    col_btn, col_info, col_link = st.columns([0.4, 6, 1])
                     score = row["score"]
                     color = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
-                    st.markdown(f"{color} **{score}**")
-                with col_info:
-                    st.markdown(f"**{row['title']}** @ {row['company']}  \n{row['location']}")
-                with col_link:
-                    if row.get("job_url"):
-                        st.markdown(f"[Apply →]({row['job_url']})")
+                    with col_btn:
+                        if st.button(f"{color}", key=f"{key}_{i}", help=f"Score: {score}"):
+                            st.session_state["selected_job_idx"] = row["index"]
+                    with col_info:
+                        st.markdown(f"<span style='font-size:0.9em'><b>{row['title']}</b> @ {row['company']} · {row['location']}</span>", unsafe_allow_html=True)
+                    with col_link:
+                        if row.get("job_url"):
+                            st.markdown(f"<a href='{row['job_url']}' target='_blank' style='font-size:0.85em'>Apply→</a>", unsafe_allow_html=True)
 
         with sub_tabs[0]:
             sea_ft = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) != "internship")]
