@@ -225,7 +225,7 @@ with tab_jobs:
                 ref_cols[0].markdown(f"[👥 Same Role]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(role_kw) + '&company=' + urllib.parse.quote(company))})")
                 ref_cols[1].markdown(f"[🎯 Recruiters]({('https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company=' + urllib.parse.quote(company))})")
                 ref_cols[2].markdown(f"[📦 SC Team]({('https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company=' + urllib.parse.quote(company))})")
-                ref_cols[3].markdown(f"[🎓 UW Alumni]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(company) + '&schoolFilter=%5B%224399%22%5D')})")
+                ref_cols[3].markdown(f"[🎓 UW Alumni]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(company) + '&schoolFilter=%5B%221646%22%5D')})")
 
 # ============================================================
 # TAB 2: APPLICATION TRACKER
@@ -275,7 +275,7 @@ with tab_referrals:
                     (f"People in similar roles at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}"),
                     (f"Recruiters at {company}", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}"),
                     (f"Supply Chain team at {company}", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}"),
-                    (f"UW Foster alumni at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%224399%22%5D"),
+                    (f"UW Foster alumni at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%221646%22%5D"),
                 ]
                 for label, url in links:
                     st.markdown(f"- [{label}]({url})")
