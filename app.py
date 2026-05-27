@@ -139,6 +139,17 @@ min_score = st.sidebar.slider("Minimum Score", 0, 100, 50)
 region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
 type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
 
+# Location filter for national jobs
+location_options = ["All Locations"]
+if not scored.empty and "location" in scored.columns:
+    national_locations = scored[scored.get("region", pd.Series()) == "national"]["location"].dropna().unique()
+    # Extract state/city from locations
+    cities = sorted(set(loc.split(",")[0].strip() for loc in national_locations if loc and loc != "nan"))
+    states = sorted(set(loc.split(",")[1].strip() if "," in loc else "" for loc in national_locations if loc and loc != "nan"))
+    states = [s for s in states if s and s != "US"]
+    location_options += states
+location_filter = st.sidebar.selectbox("Location (National)", location_options)
+
 # --- MAIN TABS ---
 tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
     "📋 Job Listings", "📊 Application Tracker", "🤝 Referrals",
@@ -159,6 +170,8 @@ def filter_jobs(df):
         filtered = filtered[filtered["region"] == region_filter]
     if type_filter != "All":
         filtered = filtered[filtered["job_type"] == type_filter]
+    if location_filter != "All Locations" and "location" in filtered.columns:
+        filtered = filtered[filtered["location"].str.contains(location_filter, case=False, na=False)]
     return filtered
 
 
