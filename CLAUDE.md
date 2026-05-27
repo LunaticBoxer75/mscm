@@ -27,33 +27,63 @@ python -m src.pipeline report    # Just generate report
 - `/add-search` — Add a new search query
 - `/generate-projects` — Analyze skill gaps and create portfolio project guides
 - `/track` — Application tracker: update status, set follow-ups, view pipeline
-- `/dashboard` — Launch Streamlit web UI (localhost:8501)
 
 ## Architecture
 
 ```
 config/profile.json          ← Candidate profile, target roles, scoring weights
 config/search_queries.json   ← Search terms by category (primary/secondary/stretch)
+config/firebase-credentials.json ← Firebase service account (gitignored)
 src/scraper.py              ← JobSpy-based multi-board scraper (Seattle + National, FT + Intern)
 src/scorer.py               ← Claude inline scoring (7 dimensions, 0-100, batch mode)
 src/reporter.py             ← 4-panel report (Seattle FT/Intern, National FT/Intern) + skills gap + trends
 src/projects.py             ← Auto-generate portfolio projects from skill gaps
+src/referrals.py            ← LinkedIn referral link generator for top companies
+src/tracker.py              ← Application status tracking with follow-ups
+src/firebase_db.py          ← Firestore sync (auto-pushes on every write)
 src/pipeline.py             ← Orchestrator (full pipeline or individual steps)
-data/jobs.db                ← SQLite database (all jobs + scores + history)
+app.py                      ← Streamlit dashboard (deployed on Streamlit Cloud)
+data/jobs.db                ← SQLite (local cache, Firestore is source of truth)
 output/report-YYYY-MM-DD.md ← Daily reports
-output/skills-gap-*.md      ← Skills gap analysis
-projects/                   ← Auto-generated project guides (beginner-friendly)
+projects/                   ← Auto-generated portfolio project guides
 ```
+
+## Data Flow
+
+```
+/find-jobs in Claude Code
+    → Scrapes 4 job boards (28 queries × 17 locations)
+    → Scores inline (Claude reads descriptions, returns 0-100)
+    → Writes to SQLite (local cache) AND Firestore (cloud)
+    → Streamlit Cloud dashboard auto-reflects new data on refresh
+```
+
+## Dashboard
+
+**Hosted on Streamlit Cloud** — same `app.py` runs locally and deployed.
+- GitHub repo: https://github.com/LunaticBoxer75/mscm (private)
+- Reads from: Google Firestore (project: mscm-5591c)
+- Access: Invite-only via Streamlit Cloud sharing settings
+
+### Tabs
+1. **Job Listings** — 4-panel view (Seattle FT/Intern, National FT/Intern) with row selection
+2. **Application Tracker** — Pipeline status, follow-up reminders
+3. **Referrals** — LinkedIn search links for employees at top companies
+4. **Skills Gap** — What top jobs request vs what Bhumika has
+5. **Projects** — Portfolio project guides to fill skill gaps
+6. **Export** — Download jobs CSV, applications CSV
 
 ## Features
 
 - **4-Panel Dashboard:** Seattle FT, Seattle Internships, National FT, National Internships
 - **7-Dimension AI Scoring:** Role relevance, skills match, experience fit, location, company tier, growth, visa
+- **LinkedIn Referral Finder:** Auto-generates search links for employees, recruiters, alumni at target companies
 - **Skills Gap Analysis:** What's commonly requested that Bhumika doesn't have yet
-- **Portfolio Project Generator:** Auto-creates beginner-friendly project guides to fill skill gaps
+- **Portfolio Project Generator:** Builds complete beginner-friendly projects with runnable code
 - **Application Tracker:** Track applied/interviewing/offer/rejected with follow-up reminders
-- **Weekly Trends:** Which roles are heating up / cooling down
 - **Salary Benchmarking:** Compares found salaries against MSCM class average ($108K)
+- **Firebase Sync:** Every scrape/score/track action auto-syncs to Firestore
+- **Internship Detection:** Titles with "intern"/"co-op"/"new grad" auto-classified correctly
 
 ## Job Boards Scraped
 
@@ -82,8 +112,8 @@ projects/                   ← Auto-generated project guides (beginner-friendly
 
 ## Target Location
 
-Seattle, WA metro area (Seattle, Bellevue, Redmond, Tacoma) + Remote positions.  
-Search radius: 50 miles.
+**Seattle & Area (priority):** Seattle, Bellevue, Kirkland, Redmond, Tacoma, Everett
+**National:** SF, SJ, LA, NYC, Chicago, Austin, Dallas, Atlanta, Boston, Denver, Remote
 
 ## Key Dependencies
 
@@ -91,9 +121,8 @@ Search radius: 50 miles.
 - `anthropic[bedrock]` — Claude via AWS Bedrock (uses corporate AWS credentials)
 - `pandas` — Data manipulation
 - `rich` — Terminal output formatting
-- `sqlite3` — Local dedup and history database
-- `streamlit` — Web dashboard UI
-- `firebase-admin` — Google Firebase sync (optional, for cloud access)
+- `streamlit` — Web dashboard (local + Streamlit Cloud)
+- `firebase-admin` — Google Firestore (primary database)
 
 ## Notes
 
@@ -103,3 +132,6 @@ Search radius: 50 miles.
 - Program starts ~September 2026
 - Scoring uses Claude Sonnet via Bedrock (us-west-2, model: us.anthropic.claude-sonnet-4-20250514-v1:0)
 - AWS auth: uses default credential chain (ada / SSO)
+- Firebase project: `mscm-5591c`
+- GitHub: `git@github.com:LunaticBoxer75/mscm.git` (push via SSH)
+- Internship postings are seasonal (summer: Aug-Oct, winter: Sep-Nov)

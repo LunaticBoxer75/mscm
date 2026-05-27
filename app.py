@@ -30,7 +30,11 @@ def get_firestore_client():
         if creds_path.exists():
             cred = credentials.Certificate(str(creds_path))
         elif "FIREBASE_CREDENTIALS" in st.secrets:
-            cred = credentials.Certificate(dict(st.secrets["FIREBASE_CREDENTIALS"]))
+            creds_dict = dict(st.secrets["FIREBASE_CREDENTIALS"])
+            # Fix private_key newlines mangled by TOML parsing
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            cred = credentials.Certificate(creds_dict)
         else:
             st.error("Firebase credentials not found. Place firebase-credentials.json in config/ or set Streamlit secrets.")
             st.stop()
