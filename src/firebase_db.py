@@ -125,18 +125,29 @@ def sync_full_db():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
+    import time
+
     # Sync all jobs
     cursor = conn.execute("SELECT * FROM jobs")
     jobs = [dict(row) for row in cursor.fetchall()]
 
-    # Batch in groups of 500 (Firestore limit)
+    # Batch in groups of 200 with rate limiting to avoid quota exhaustion
     jobs_ref = db.collection("jobs")
-    for i in range(0, len(jobs), 400):
+    for i in range(0, len(jobs), 200):
         batch = db.batch()
-        for job in jobs[i:i+400]:
+        for job in jobs[i:i+200]:
             doc_ref = jobs_ref.document(job["job_id"])
             batch.set(doc_ref, job, merge=True)
-        batch.commit()
+        try:
+            batch.commit()
+        except Exception:
+            time.sleep(30)
+            batch = db.batch()
+            for job in jobs[i:i+200]:
+                doc_ref = jobs_ref.document(job["job_id"])
+                batch.set(doc_ref, job, merge=True)
+            batch.commit()
+        time.sleep(1)
 
     # Sync applications
     try:
