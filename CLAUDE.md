@@ -96,10 +96,10 @@ This ensures: every job gets scored (no invisible unscored entries), irrelevant 
 
 ## Job Boards Scraped
 
-- LinkedIn
-- Indeed  
-- Google Jobs
-- ZipRecruiter
+- Indeed (primary — most reliable, no rate limits)
+- LinkedIn (secondary — works but rate-limited for large batches)
+- ~~Google Jobs~~ (deprecated in jobspy, returns 0)
+- ~~ZipRecruiter~~ (403 blocked)
 
 ## Scoring Dimensions
 

@@ -74,7 +74,7 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
     prefs = profile["search_preferences"]
 
     if sites is None:
-        sites = ["indeed", "linkedin", "google", "zip_recruiter"]
+        sites = ["indeed", "linkedin"]
     if hours_old is None:
         hours_old = prefs["hours_old"]
 
