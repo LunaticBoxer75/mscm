@@ -140,12 +140,12 @@ with tab_jobs:
             if df.empty:
                 st.info(f"No {name} jobs matching filters.")
                 return
-            display = df[["score", "title", "company", "location", "job_url"]].copy()
+            display = df[["score", "title", "company", "location"]].copy()
             display["score"] = display["score"].astype(int)
-            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location", "job_url": "Link"})
+            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location"})
             event = st.dataframe(
                 display,
-                column_config={"Link": st.column_config.LinkColumn("Apply", display_text="Apply →"), "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)},
+                column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)},
                 hide_index=True, use_container_width=True,
                 on_select="rerun", selection_mode="single-row", key=key,
             )
