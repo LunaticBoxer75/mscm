@@ -140,12 +140,14 @@ min_score = st.sidebar.slider("Minimum Score", 0, 100, 50)
 region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
 type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
 
+# Date filter
+date_options = ["All Time", "Last 24 hours", "Last 3 days", "Last 7 days", "Last 30 days"]
+date_filter = st.sidebar.selectbox("Posted", date_options)
+
 # Location filter for national jobs
 location_options = ["All Locations"]
 if not scored.empty and "location" in scored.columns:
     national_locations = scored[scored.get("region", pd.Series()) == "national"]["location"].dropna().unique()
-    # Extract state/city from locations
-    cities = sorted(set(loc.split(",")[0].strip() for loc in national_locations if loc and loc != "nan"))
     states = sorted(set(loc.split(",")[1].strip() if "," in loc else "" for loc in national_locations if loc and loc != "nan"))
     states = [s for s in states if s and s != "US"]
     location_options += states
@@ -181,6 +183,13 @@ def filter_jobs(df):
             filtered.get("location", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False)
         )
         filtered = filtered[mask]
+    # Date filter
+    if date_filter != "All Time" and "date_posted" in filtered.columns:
+        from datetime import timedelta
+        days_map = {"Last 24 hours": 1, "Last 3 days": 3, "Last 7 days": 7, "Last 30 days": 30}
+        days = days_map.get(date_filter, 9999)
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        filtered = filtered[filtered["date_posted"].fillna("") >= cutoff]
     return filtered
 
 

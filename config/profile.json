@@ -133,7 +133,7 @@
     "job_types": ["fulltime", "internship"],
     "scrape_job_types_separately": true,
     "hours_old": 24,
-    "results_per_search": 25,
+    "results_per_search": 50,
     "country": "USA",
     "min_salary": 70000,
     "exclude_terms": [
