@@ -53,10 +53,19 @@ projects/                   ← Auto-generated portfolio project guides
 ```
 /find-jobs in Claude Code
     → Scrapes 4 job boards (28 queries × 17 locations)
-    → Scores inline (Claude reads descriptions, returns 0-100)
+    → Quick-scores ALL jobs (rule-based triage via src/quick_scorer.py)
+    → AI-scores jobs with quick-score 40+ (Claude inline, reads full description)
     → Writes to SQLite (local cache) AND Firestore (cloud)
     → Streamlit Cloud dashboard auto-reflects new data on refresh
 ```
+
+## Scoring Architecture (Two-Pass)
+
+1. **Pass 1 — Quick Scorer** (`src/quick_scorer.py`): Rule-based triage applied to ALL jobs immediately after scraping. Uses title keywords, seniority detection, years-of-experience extraction from description, and location matching. Kills obvious irrelevant jobs (retail, medical, etc.) at score <30. Fast — handles 1000+ jobs in seconds.
+
+2. **Pass 2 — AI Scorer** (Claude inline): Applied to jobs scoring 40+ from Pass 1 (~300-500 relevant ones). Claude reads the full job description and scores with nuance (e.g., "2+ required, 5+ preferred" vs "must have 9+ years"). Returns detailed reasoning, highlights, and red flags.
+
+This ensures: every job gets scored (no invisible unscored entries), irrelevant jobs don't waste AI time, and relevant jobs get proper contextual evaluation.
 
 ## Dashboard
 
