@@ -209,6 +209,19 @@ with tab_jobs:
                     st.success(f"Marked as {track_st}!")
                     st.rerun()
 
+            # Referral links for this specific job
+            import urllib.parse
+            company = job.get("company", "")
+            title = job.get("title", "")
+            if company:
+                role_kw = title.lower().replace("sr.", "").replace("senior", "").replace("jr.", "").strip()
+                st.markdown("#### 🤝 Find Referrals at " + company)
+                ref_cols = st.columns(4)
+                ref_cols[0].markdown(f"[👥 Same Role]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(role_kw) + '&company=' + urllib.parse.quote(company))})")
+                ref_cols[1].markdown(f"[🎯 Recruiters]({('https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company=' + urllib.parse.quote(company))})")
+                ref_cols[2].markdown(f"[📦 SC Team]({('https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company=' + urllib.parse.quote(company))})")
+                ref_cols[3].markdown(f"[🎓 UW Alumni]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(company) + '&schoolFilter=%5B%224399%22%5D')})")
+
 # ============================================================
 # TAB 2: APPLICATION TRACKER
 # ============================================================
