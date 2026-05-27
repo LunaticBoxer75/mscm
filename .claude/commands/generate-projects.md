@@ -1,52 +1,62 @@
 # Generate Portfolio Projects
 
-Analyze skill gaps from job listings and build complete project packages with full documentation.
+Identify skill gaps from job data and build complete project packages with documentation and code.
 
 ## Instructions
 
-1. First, identify gaps from scored jobs:
+1. Check what gaps need projects:
    ```
    cd /Users/aniketsw/workspaces/mscm && python -c "
-   from src.projects import identify_skill_gaps
+   from src.projects import identify_skill_gaps, get_gaps_needing_projects, get_existing_projects
+   
    gaps = identify_skill_gaps()
-   print('SKILL_GAPS:')
+   print('ALL SKILL GAPS (from top job listings):')
    for name, count in gaps:
-       print(f'  {name}: requested in {count} jobs')
+       print(f'  {name}: {count} jobs request this')
+   
+   existing = get_existing_projects()
+   print(f'\nEXISTING PROJECTS: {existing}')
+   
+   needs = get_gaps_needing_projects()
+   print(f'\nGAPS NEEDING NEW PROJECTS: {len(needs)}')
+   for name, count, pct in needs:
+       print(f'  → {name} ({pct}% of top jobs, {count} mentions)')
    "
    ```
 
-2. Check which projects already exist:
-   ```
-   ls /Users/aniketsw/workspaces/mscm/projects/*/README.md 2>/dev/null
-   ```
+2. **For each gap that needs a project, BUILD THE FULL PROJECT yourself:**
 
-3. **IMPORTANT — Only generate a project if:**
-   - A skill gap is genuinely present (appears in 15%+ of top job listings)
-   - No existing project already covers it
-   - The user hasn't explicitly skipped or rejected it previously
+   Each project MUST include:
+   - `projects/<skill-name>/README.md` — Complete beginner-friendly guide (300+ lines)
+   - `projects/<skill-name>/<script>.py` — Fully runnable code that produces output
+   - `projects/<skill-name>/requirements.txt` — Python dependencies
 
-4. For each NEW gap that warrants a project, **build the complete project** — not just an idea:
-   - `projects/<skill-name>/README.md` — Full beginner-friendly walkthrough (see existing projects for format)
-   - `projects/<skill-name>/<main-script>` — Complete runnable code
-   - `projects/<skill-name>/requirements.txt` — Dependencies
-   - Include: what you'll build, why it matters, every step from install to completion, resume line, interview talking points
+   Quality standard (look at `projects/python-demand-forecasting/` as reference):
+   - Assumes ZERO prior experience with the tool/skill
+   - Every step explained: what it is, why it matters, how to do it
+   - Produces a visible artifact (chart, dashboard, report)
+   - Includes copy-paste resume bullet point
+   - Includes interview talking points
+   - Uses ONLY free tools
+   - Completable in 1-2 weeks at ~2hr/day
 
-5. After generating, update the projects index:
+3. **DO NOT generate a project if:**
+   - The gap appears in <15% of top job listings (not worth the time)
+   - An existing project already covers it
+   - There's no free tool available to learn the skill (e.g., SAP requires paid access unless UW provides it)
+
+4. After building, regenerate the index:
    ```
    cd /Users/aniketsw/workspaces/mscm && python -c "
-   from src.projects import generate_all_projects
-   projects = generate_all_projects()
-   for p in projects:
-       print(f'  ✓ {p[\"title\"]} → {p[\"path\"]}')
+   from src.projects import generate_project_index
+   generate_project_index()
+   print('Index updated')
    "
    ```
 
-6. Present what was generated to the user.
+5. Present to the user: what was built, which gap it fills, and next steps.
 
-## Project Quality Bar
-Each project must be:
-- Completable by someone with ZERO prior experience in that tool
-- Produces a tangible portfolio artifact (image, dashboard, report)
-- Includes a copy-paste resume bullet point
-- Uses only free tools
-- Takes 1-2 weeks at ~2hr/day
+## When NOT to Generate
+- If all significant gaps are already covered → tell the user
+- If gaps are below 15% threshold → mention them but don't force a project
+- If the skill requires paid tools with no free alternative → note it as a "course recommendation" instead
