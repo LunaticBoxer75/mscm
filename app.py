@@ -117,7 +117,7 @@ def update_application_firestore(job_id, status, notes=None, follow_up_date=None
 
 # --- HEADER ---
 st.title("🎯 MSCM Job Search Dashboard")
-st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2028")
+st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2027")
 
 # --- LOAD DATA ---
 all_jobs = load_jobs_from_firestore(min_score=0)
