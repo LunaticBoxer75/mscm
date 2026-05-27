@@ -214,18 +214,34 @@ with tab_jobs:
                     st.success(f"Marked as {track_st}!")
                     st.rerun()
 
-            # Referral links for this specific job
+            # Quick actions + Referral links for this specific job
             import urllib.parse
             company = job.get("company", "")
             title = job.get("title", "")
+            job_url = job.get("job_url", "")
+
             if company:
+                st.markdown("---")
+                st.markdown("#### ⚡ Quick Actions")
+
+                # Row 1: Apply + Connect message
+                act_cols = st.columns([2, 3])
+                with act_cols[0]:
+                    if job_url:
+                        st.link_button("📝 Apply Now", job_url, use_container_width=True)
+                with act_cols[1]:
+                    connect_msg = f"Hi! I'm an incoming MSCM student at UW Foster with 3 years of operations experience at Uber. I saw the {title} role at {company} and would love to connect and learn more about your team."
+                    st.code(connect_msg, language=None)
+                    st.caption("👆 Copy this → paste into LinkedIn connection request note")
+
+                # Row 2: Referral search links
+                st.markdown("#### 🤝 Find People at " + company)
                 role_kw = title.lower().replace("sr.", "").replace("senior", "").replace("jr.", "").strip()
-                st.markdown("#### 🤝 Find Referrals at " + company)
                 ref_cols = st.columns(4)
-                ref_cols[0].markdown(f"[👥 Same Role]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(role_kw) + '&company=' + urllib.parse.quote(company))})")
-                ref_cols[1].markdown(f"[🎯 Recruiters]({('https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company=' + urllib.parse.quote(company))})")
-                ref_cols[2].markdown(f"[📦 SC Team]({('https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company=' + urllib.parse.quote(company))})")
-                ref_cols[3].markdown(f"[🎓 UW Alumni]({('https://www.linkedin.com/search/results/people/?keywords=' + urllib.parse.quote(company) + '&schoolFilter=%5B%222584%22%5D')})")
+                ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
 
 # ============================================================
 # TAB 2: APPLICATION TRACKER
