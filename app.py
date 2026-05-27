@@ -135,6 +135,7 @@ if not scored.empty:
 
 # --- SIDEBAR ---
 st.sidebar.header("Filters")
+search_query = st.sidebar.text_input("🔍 Search (title, company, location)", placeholder="e.g. supply chain manager")
 min_score = st.sidebar.slider("Minimum Score", 0, 100, 50)
 region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
 type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
@@ -172,6 +173,14 @@ def filter_jobs(df):
         filtered = filtered[filtered["job_type"] == type_filter]
     if location_filter != "All Locations" and "location" in filtered.columns:
         filtered = filtered[filtered["location"].str.contains(location_filter, case=False, na=False)]
+    if search_query:
+        q = search_query.lower()
+        mask = (
+            filtered.get("title", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False) |
+            filtered.get("company", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False) |
+            filtered.get("location", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False)
+        )
+        filtered = filtered[mask]
     return filtered
 
 
