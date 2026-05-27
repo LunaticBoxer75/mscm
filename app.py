@@ -68,6 +68,39 @@ def load_applications_from_firestore():
     return pd.DataFrame(apps) if apps else pd.DataFrame()
 
 
+def load_contacts_from_firestore():
+    """Load saved contacts from Firestore."""
+    db = get_firestore_client()
+    contacts_ref = db.collection("contacts")
+    docs = contacts_ref.stream()
+    contacts = [doc.to_dict() for doc in docs]
+    return pd.DataFrame(contacts) if contacts else pd.DataFrame()
+
+
+def save_contact_firestore(name, company, role, linkedin_url, notes="", status="to_reach_out"):
+    """Save a contact for networking/referral."""
+    db = get_firestore_client()
+    doc_id = f"{company}_{name}".replace(" ", "_").lower()
+    db.collection("contacts").document(doc_id).set({
+        "name": name,
+        "company": company,
+        "role": role,
+        "linkedin_url": linkedin_url,
+        "notes": notes,
+        "status": status,
+        "added_at": datetime.now().isoformat(),
+    }, merge=True)
+
+
+def update_contact_status_firestore(doc_id, status, notes=None):
+    """Update a contact's outreach status."""
+    db = get_firestore_client()
+    update = {"status": status, "updated_at": datetime.now().isoformat()}
+    if notes is not None:
+        update["notes"] = notes
+    db.collection("contacts").document(doc_id).set(update, merge=True)
+
+
 def update_application_firestore(job_id, status, notes=None, follow_up_date=None):
     """Update application status in Firestore."""
     db = get_firestore_client()
@@ -245,12 +278,12 @@ with tab_jobs:
                 with act_cols[1]:
                     connect_msg = f"""Hi [Name],
 
-I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations experience at Uber. I came across the {title} role at {company} and noticed your work there. Would love to connect and learn about your experience on the team.
+I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. Happy to share my resume or chat briefly. Thank you!
 
-Thanks!
+Best,
 Bhumika"""
                     st.code(connect_msg, language=None)
-                    st.caption("👆 Copy → replace [Name] → paste into LinkedIn connection note (300 char limit for notes, full version for InMail/DM)")
+                    st.caption("👆 Copy → replace [Name] → paste into LinkedIn connection note or DM")
 
                 # Row 2: Referral search links
                 st.markdown("#### 🤝 Find People at " + company)
@@ -286,8 +319,8 @@ with tab_tracker:
 # TAB 3: REFERRALS
 # ============================================================
 with tab_referrals:
-    st.subheader("🤝 Referral & Networking Links")
-    st.caption("LinkedIn search links to find employees at top companies")
+    st.subheader("🤝 Find People for Referrals")
+    st.caption("Click a company to get LinkedIn search links for people who can refer you")
 
     if scored.empty:
         st.info("No scored jobs yet.")
@@ -304,21 +337,17 @@ with tab_referrals:
             title = job.get("title", "")
             role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
 
-            with st.expander(f"**[{int(job['score'])}] {title}** @ {company} — {job.get('location', '')}"):
-                links = [
-                    (f"People in similar roles at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}"),
-                    (f"Recruiters at {company}", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}"),
-                    (f"Supply Chain team at {company}", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}"),
-                    (f"UW Foster alumni at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D"),
-                ]
-                for label, url in links:
-                    st.markdown(f"- [{label}]({url})")
-                if job.get("job_url"):
-                    st.markdown(f"\n[View Job Posting →]({job['job_url']})")
+            with st.expander(f"**{company}** — {title} · {job.get('location', '')}"):
+                ref_cols = st.columns(4)
+                ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", use_container_width=True)
+                ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
 
-        st.divider()
-        st.subheader("📝 Outreach Template")
-        st.code("Hi [Name],\n\nI'm an incoming MSCM student at UW Foster (starting Fall 2026) with 3 years\nof operations experience at Uber. I noticed [Company] has a [Role] opening\nand I'd love to learn more about the team and culture.\n\nWould you be open to a 15-minute chat? Happy to work around your schedule.\n\nBest,\nBhumika Choudhary", language=None)
+                # Pre-composed referral message
+                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would appreciate a referral if you think my background is a fit. Happy to share my resume. Thank you!"
+                st.code(msg, language=None)
+                st.caption("Copy → replace [Name] → paste into connection note or DM")
 
 # ============================================================
 # TAB 4: SKILLS GAP
