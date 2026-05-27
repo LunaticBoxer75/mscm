@@ -278,7 +278,7 @@ with tab_jobs:
                 with act_cols[1]:
                     connect_msg = f"""Hi [Name],
 
-I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. Happy to share my resume or chat briefly. Thank you!
+I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!
 
 Best,
 Bhumika"""
@@ -345,7 +345,7 @@ with tab_referrals:
                 ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
 
                 # Pre-composed referral message
-                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would appreciate a referral if you think my background is a fit. Happy to share my resume. Thank you!"
+                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would appreciate a referral if you think my background is a fit. I've attached my resume for reference. Thank you!"
                 st.code(msg, language=None)
                 st.caption("Copy → replace [Name] → paste into connection note or DM")
 
