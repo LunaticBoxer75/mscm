@@ -35,7 +35,12 @@ Run the full MSCM job search pipeline: scrape job boards, score against Bhumika'
    "
    ```
 
-4. **IMPORTANT: Score the jobs yourself.** Read the prompt that was printed between SCORING_PROMPT_START and SCORING_PROMPT_END. Respond with the JSON array of scores following that prompt's instructions. Then save the scores:
+4. **IMPORTANT: Score ALL jobs yourself.** Never leave unscored jobs. For bulk scoring, use title-based quick scoring for obviously irrelevant jobs (retail, healthcare, food service → score 10-20) and properly score the relevant ones. Always penalize:
+   - Director/VP/Principal/Chief → score max 35 (requires 10+ years)
+   - "10+ years" or "15+ years" in description → score max 40
+   - "Senior Manager" → score max 60 (stretch)
+   
+   Then save the scores:
    ```
    cd /Users/aniketsw/workspaces/mscm && python -c "
    from src.scorer import parse_batch_scores, update_job_score
