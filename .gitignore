@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .venv/
 config/firebase-credentials.json
+.streamlit/secrets.toml

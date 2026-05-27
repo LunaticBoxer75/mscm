@@ -1,120 +1,102 @@
-"""MSCM Job Search Dashboard — Streamlit web UI."""
+"""MSCM Job Search Dashboard — Streamlit web UI.
+
+Reads all data from Google Firestore (same source locally and deployed).
+"""
 
 import json
-import sqlite3
 import zipfile
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-DATA_DIR = Path(__file__).parent / "data"
-DB_PATH = DATA_DIR / "jobs.db"
 PROJECTS_DIR = Path(__file__).parent / "projects"
 OUTPUT_DIR = Path(__file__).parent / "output"
+CONFIG_DIR = Path(__file__).parent / "config"
 
-st.set_page_config(
-    page_title="MSCM Job Search",
-    page_icon="🎯",
-    layout="wide",
-)
+st.set_page_config(page_title="MSCM Job Search", page_icon="🎯", layout="wide")
 
 
-def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+# --- FIREBASE INIT ---
+@st.cache_resource
+def get_firestore_client():
+    """Initialize Firestore client. Works locally (credentials file) and deployed (secrets)."""
+    if not firebase_admin._apps:
+        creds_path = CONFIG_DIR / "firebase-credentials.json"
+        if creds_path.exists():
+            cred = credentials.Certificate(str(creds_path))
+        elif "FIREBASE_CREDENTIALS" in st.secrets:
+            cred = credentials.Certificate(dict(st.secrets["FIREBASE_CREDENTIALS"]))
+        else:
+            st.error("Firebase credentials not found. Place firebase-credentials.json in config/ or set Streamlit secrets.")
+            st.stop()
+        firebase_admin.initialize_app(cred)
+    return firestore.client()
 
 
-def load_jobs(min_score=None, region=None, job_type=None):
-    conn = get_conn()
-    query = "SELECT * FROM jobs WHERE score IS NOT NULL"
-    params = []
-    if min_score:
-        query += " AND score >= ?"
-        params.append(min_score)
-    if region:
-        query += " AND region = ?"
-        params.append(region)
-    if job_type:
-        query += " AND job_type = ?"
-        params.append(job_type)
-    query += " ORDER BY score DESC"
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
-    return df
+def load_jobs_from_firestore(min_score=None):
+    """Load jobs from Firestore."""
+    db = get_firestore_client()
+    jobs_ref = db.collection("jobs")
+
+    if min_score and min_score > 0:
+        q = jobs_ref.where("score", ">=", min_score).order_by("score", direction=firestore.Query.DESCENDING)
+    else:
+        q = jobs_ref.order_by("score", direction=firestore.Query.DESCENDING)
+
+    docs = q.stream()
+    jobs = []
+    for doc in docs:
+        data = doc.to_dict()
+        if data.get("score") is not None:
+            jobs.append(data)
+    return pd.DataFrame(jobs) if jobs else pd.DataFrame()
 
 
-def load_all_jobs():
-    conn = get_conn()
-    df = pd.read_sql_query("SELECT * FROM jobs", conn)
-    conn.close()
-    return df
+def load_applications_from_firestore():
+    """Load applications from Firestore."""
+    db = get_firestore_client()
+    apps_ref = db.collection("applications")
+    docs = apps_ref.stream()
+    apps = [doc.to_dict() for doc in docs]
+    return pd.DataFrame(apps) if apps else pd.DataFrame()
 
 
-def ensure_tracker_table():
-    conn = get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS applications (
-            job_id TEXT PRIMARY KEY,
-            status TEXT DEFAULT 'new',
-            applied_date TEXT,
-            notes TEXT,
-            follow_up_date TEXT,
-            updated_at TEXT,
-            FOREIGN KEY (job_id) REFERENCES jobs(job_id)
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
-def get_applications():
-    ensure_tracker_table()
-    conn = get_conn()
-    df = pd.read_sql_query("""
-        SELECT j.title, j.company, j.location, j.job_url, j.score, j.job_type, j.region,
-               a.status, a.applied_date, a.notes, a.follow_up_date, a.job_id
-        FROM applications a
-        JOIN jobs j ON a.job_id = j.job_id
-        ORDER BY
-            CASE a.status
-                WHEN 'interviewing' THEN 1
-                WHEN 'applied' THEN 2
-                WHEN 'offer' THEN 3
-                WHEN 'new' THEN 4
-                WHEN 'rejected' THEN 5
-                WHEN 'skipped' THEN 6
-            END,
-            j.score DESC
-    """, conn)
-    conn.close()
-    return df
-
-
-def update_application(job_id, status, notes=None, follow_up_date=None):
-    """Update application status — uses tracker module which auto-syncs to Firebase."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent / "src"))
-    from src.tracker import update_status
-    update_status(job_id, status, notes, follow_up_date)
+def update_application_firestore(job_id, status, notes=None, follow_up_date=None):
+    """Update application status in Firestore."""
+    db = get_firestore_client()
+    doc_ref = db.collection("applications").document(job_id)
+    doc_ref.set({
+        "job_id": job_id,
+        "status": status,
+        "notes": notes,
+        "follow_up_date": follow_up_date,
+        "updated_at": datetime.now().isoformat(),
+        "applied_date": datetime.now().isoformat() if status == "applied" else None,
+    }, merge=True)
 
 
 # --- HEADER ---
 st.title("🎯 MSCM Job Search Dashboard")
 st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2028")
 
-# --- METRICS ---
-all_jobs = load_all_jobs()
-scored = all_jobs[all_jobs["score"].notna()]
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Total Jobs", len(all_jobs))
-col2.metric("Scored", len(scored))
-col3.metric("Score 75+", len(scored[scored["score"] >= 75]))
-col4.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
-col5.metric("Unscored", len(all_jobs[all_jobs["score"].isna()]))
+# --- LOAD DATA ---
+all_jobs = load_jobs_from_firestore(min_score=0)
+scored = all_jobs[all_jobs["score"].notna()] if not all_jobs.empty else pd.DataFrame()
 
-st.divider()
+# --- METRICS ---
+if not scored.empty:
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Total Jobs", len(all_jobs))
+    col2.metric("Scored", len(scored))
+    col3.metric("Score 75+", len(scored[scored["score"] >= 75]))
+    col4.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
+    col5.metric("Unscored", len(all_jobs) - len(scored))
+    st.divider()
 
 # --- SIDEBAR ---
 st.sidebar.header("Filters")
@@ -122,145 +104,111 @@ min_score = st.sidebar.slider("Minimum Score", 0, 100, 50)
 region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
 type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
 
-region_val = None if region_filter == "All" else region_filter
-type_val = None if type_filter == "All" else type_filter
-
-st.sidebar.divider()
-st.sidebar.header("Export")
-export_format = st.sidebar.selectbox("Export Format", ["CSV", "JSON", "Full ZIP"])
-
 # --- MAIN TABS ---
 tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
     "📋 Job Listings", "📊 Application Tracker", "🤝 Referrals",
     "🎓 Skills Gap", "🛠️ Projects", "📤 Export"
 ])
 
+
+def filter_jobs(df):
+    """Apply sidebar filters."""
+    if df.empty:
+        return df
+    filtered = df[df["score"] >= min_score].copy()
+    if region_filter != "All":
+        filtered = filtered[filtered.get("region", pd.Series(dtype=str)) == region_filter]
+    if type_filter != "All":
+        filtered = filtered[filtered.get("job_type", pd.Series(dtype=str)) == type_filter]
+    return filtered
+
+
 # ============================================================
-# TAB 1: JOB LISTINGS (4 panels)
+# TAB 1: JOB LISTINGS
 # ============================================================
 with tab_jobs:
-    jobs = load_jobs(min_score=min_score, region=region_val, job_type=type_val)
+    if scored.empty:
+        st.info("No scored jobs yet. Run `/find-jobs` in Claude Code.")
+    else:
+        jobs = filter_jobs(scored)
 
-    sub_tab1, sub_tab2, sub_tab3, sub_tab4, sub_tab5 = st.tabs([
-        "Seattle Full-Time", "Seattle Internships",
-        "National Full-Time", "National Internships", "All"
-    ])
+        sub_tabs = st.tabs(["Seattle Full-Time", "Seattle Internships", "National Full-Time", "National Internships", "All"])
 
-    def render_job_table(df, tab_name, key_suffix=""):
-        if df.empty:
-            st.info(f"No {tab_name} jobs found matching filters.")
-            return
+        def render_table(df, name, key):
+            if df.empty:
+                st.info(f"No {name} jobs matching filters.")
+                return
+            display = df[["score", "title", "company", "location", "job_url"]].copy()
+            display["score"] = display["score"].astype(int)
+            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location", "job_url": "Link"})
+            event = st.dataframe(
+                display,
+                column_config={"Link": st.column_config.LinkColumn("Apply", display_text="Apply →"), "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)},
+                hide_index=True, use_container_width=True,
+                on_select="rerun", selection_mode="single-row", key=key,
+            )
+            if event and event.selection and event.selection.rows:
+                row_idx = event.selection.rows[0]
+                st.session_state["selected_job_idx"] = df.index[row_idx]
 
-        display_df = df[["score", "title", "company", "location", "salary_min", "salary_max", "job_url", "date_posted"]].copy()
-        display_df["salary"] = display_df.apply(
-            lambda r: f"${r['salary_min']:,.0f}-${r['salary_max']:,.0f}"
-            if pd.notna(r["salary_min"]) and pd.notna(r["salary_max"])
-            else (f"${r['salary_min']:,.0f}+" if pd.notna(r["salary_min"]) else "—"),
-            axis=1,
-        )
-        display_df = display_df.drop(columns=["salary_min", "salary_max"])
-        display_df["score"] = display_df["score"].astype(int)
-        display_df = display_df.rename(columns={
-            "score": "Score", "title": "Title", "company": "Company",
-            "location": "Location", "salary": "Salary", "job_url": "Link",
-            "date_posted": "Posted",
-        })
+        with sub_tabs[0]:
+            sea_ft = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) != "internship")]
+            render_table(sea_ft, "Seattle full-time", "t_sea_ft")
+        with sub_tabs[1]:
+            sea_int = jobs[(jobs.get("region", pd.Series(dtype=str)).isin(["seattle", ""]) | jobs.get("region", pd.Series(dtype=str)).isna()) & (jobs.get("job_type", pd.Series(dtype=str)) == "internship")]
+            render_table(sea_int, "Seattle internship", "t_sea_int")
+        with sub_tabs[2]:
+            nat_ft = jobs[jobs.get("region", pd.Series(dtype=str)) == "national"]
+            nat_ft = nat_ft[nat_ft.get("job_type", pd.Series(dtype=str)) != "internship"]
+            render_table(nat_ft, "National full-time", "t_nat_ft")
+        with sub_tabs[3]:
+            nat_int = jobs[(jobs.get("region", pd.Series(dtype=str)) == "national") & (jobs.get("job_type", pd.Series(dtype=str)) == "internship")]
+            render_table(nat_int, "National internship", "t_nat_int")
+        with sub_tabs[4]:
+            render_table(jobs, "all", "t_all")
 
-        event = st.dataframe(
-            display_df,
-            column_config={
-                "Link": st.column_config.LinkColumn("Apply", display_text="Apply →"),
-                "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
-            },
-            hide_index=True,
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            key=f"table_{tab_name}_{key_suffix}",
-        )
-
-        # If a row is selected in this table, store it in session state
-        if event and event.selection and event.selection.rows:
-            selected_row_idx = event.selection.rows[0]
-            original_idx = df.index[selected_row_idx]
-            st.session_state["selected_job_idx"] = original_idx
-
-    with sub_tab1:
-        seattle_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
-        untagged_ft = jobs[(jobs["region"].isna()) & (jobs["job_type"] != "internship")]
-        seattle_ft = pd.concat([seattle_ft, untagged_ft])
-        render_job_table(seattle_ft, "Seattle full-time", "sea_ft")
-
-    with sub_tab2:
-        seattle_intern = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
-        untagged_intern = jobs[(jobs["region"].isna()) & (jobs["job_type"] == "internship")]
-        seattle_intern = pd.concat([seattle_intern, untagged_intern])
-        render_job_table(seattle_intern, "Seattle internship", "sea_int")
-
-    with sub_tab3:
-        national_ft = jobs[(jobs["region"] == "national") & (jobs["job_type"] != "internship")]
-        render_job_table(national_ft, "National full-time", "nat_ft")
-
-    with sub_tab4:
-        national_intern = jobs[(jobs["region"] == "national") & (jobs["job_type"] == "internship")]
-        render_job_table(national_intern, "National internship", "nat_int")
-
-    with sub_tab5:
-        render_job_table(jobs, "all", "all")
-
-    # Job detail panel — driven by table row selection
-    if not jobs.empty:
-        st.divider()
-        st.subheader("Job Details")
-
-        selected_idx = st.session_state.get("selected_job_idx")
-
-        # Validate the selection is still in current filtered jobs
-        if selected_idx is None or selected_idx not in jobs.index:
-            selected_idx = jobs.index[0]
-
-        # Show which job is selected (also allow manual override via dropdown)
-        selected_idx = st.selectbox(
-            "Selected job (click a row above to change):",
-            options=jobs.index,
-            index=list(jobs.index).index(selected_idx) if selected_idx in jobs.index else 0,
-            format_func=lambda i: f"[{int(jobs.loc[i, 'score'])}] {jobs.loc[i, 'title']} @ {jobs.loc[i, 'company']}",
-            key="detail_select",
-        )
-
-        job = jobs.loc[selected_idx]
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            st.markdown(f"### {job['title']}")
-            st.markdown(f"**{job['company']}** — {job['location']}")
-            if job.get("job_url"):
-                st.markdown(f"[Apply Here]({job['job_url']})")
-            if job.get("description"):
-                with st.expander("Full Description", expanded=False):
-                    st.markdown(str(job["description"])[:3000])
-
-        with col2:
-            st.metric("Overall Score", f"{int(job['score'])}/100")
-            if job.get("score_breakdown"):
-                try:
-                    breakdown = json.loads(job["score_breakdown"]) if isinstance(job["score_breakdown"], str) else {}
-                    if breakdown.get("reasoning"):
-                        st.info(breakdown["reasoning"])
-                    if breakdown.get("highlights"):
-                        st.success("**Highlights:** " + ", ".join(breakdown["highlights"]))
-                    if breakdown.get("red_flags") and breakdown["red_flags"]:
-                        st.warning("**Concerns:** " + ", ".join(breakdown["red_flags"]))
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            # Quick action: track this job
+        # Job detail panel
+        if not jobs.empty:
             st.divider()
-            track_status = st.selectbox("Track:", ["—", "applied", "interviewing", "skipped"], key="track_status")
-            if track_status != "—":
-                if st.button("Update Status"):
-                    update_application(job["job_id"], track_status)
-                    st.success(f"Marked as {track_status}!")
+            st.subheader("Job Details")
+            sel_idx = st.session_state.get("selected_job_idx")
+            if sel_idx is None or sel_idx not in jobs.index:
+                sel_idx = jobs.index[0]
+
+            sel_idx = st.selectbox("Selected job:", jobs.index,
+                                   index=list(jobs.index).index(sel_idx) if sel_idx in jobs.index else 0,
+                                   format_func=lambda i: f"[{int(jobs.loc[i, 'score'])}] {jobs.loc[i, 'title']} @ {jobs.loc[i, 'company']}",
+                                   key="detail_sel")
+            job = jobs.loc[sel_idx]
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                st.markdown(f"### {job['title']}")
+                st.markdown(f"**{job['company']}** — {job.get('location', '')}")
+                if job.get("job_url"):
+                    st.markdown(f"[Apply Here]({job['job_url']})")
+                if job.get("description"):
+                    with st.expander("Full Description"):
+                        st.markdown(str(job["description"])[:3000])
+            with c2:
+                st.metric("Score", f"{int(job['score'])}/100")
+                breakdown = {}
+                if job.get("score_breakdown"):
+                    try:
+                        breakdown = json.loads(job["score_breakdown"]) if isinstance(job["score_breakdown"], str) else (job["score_breakdown"] or {})
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if breakdown.get("reasoning"):
+                    st.info(breakdown["reasoning"])
+                if breakdown.get("highlights"):
+                    st.success("**Highlights:** " + ", ".join(breakdown["highlights"]))
+                if breakdown.get("red_flags") and breakdown["red_flags"]:
+                    st.warning("**Concerns:** " + ", ".join(breakdown["red_flags"]))
+
+                st.divider()
+                track_st = st.selectbox("Track:", ["—", "applied", "interviewing", "skipped"], key="trk")
+                if track_st != "—" and st.button("Update Status"):
+                    update_application_firestore(job.get("job_id", ""), track_st)
+                    st.success(f"Marked as {track_st}!")
                     st.rerun()
 
 # ============================================================
@@ -268,269 +216,119 @@ with tab_jobs:
 # ============================================================
 with tab_tracker:
     st.subheader("Application Pipeline")
-
-    apps = get_applications()
+    apps = load_applications_from_firestore()
 
     if apps.empty:
         st.info("No applications tracked yet. Go to Job Listings → select a job → set status.")
     else:
-        # Pipeline summary
-        status_counts = apps["status"].value_counts()
-        cols = st.columns(6)
-        statuses = ["new", "applied", "interviewing", "offer", "rejected", "skipped"]
-        colors = ["🔵", "📨", "🎤", "🎉", "❌", "⏭️"]
-        for col, status, emoji in zip(cols, statuses, colors):
-            count = status_counts.get(status, 0)
-            col.metric(f"{emoji} {status.title()}", count)
+        statuses = ["applied", "interviewing", "offer", "rejected", "skipped"]
+        status_counts = apps["status"].value_counts() if "status" in apps.columns else pd.Series()
+        cols = st.columns(5)
+        emojis = ["📨", "🎤", "🎉", "❌", "⏭️"]
+        for col, status, emoji in zip(cols, statuses, emojis):
+            col.metric(f"{emoji} {status.title()}", status_counts.get(status, 0))
 
         st.divider()
-
-        # Follow-ups due
-        today = datetime.now().strftime("%Y-%m-%d")
-        due = apps[apps["follow_up_date"].notna() & (apps["follow_up_date"] <= today)]
-        if not due.empty:
-            st.warning(f"⏰ **{len(due)} follow-ups due!**")
-            for _, row in due.iterrows():
-                st.markdown(f"- **{row['title']}** @ {row['company']} — due {row['follow_up_date']}")
-
-        # Full table
-        st.dataframe(
-            apps[["status", "title", "company", "score", "applied_date", "notes", "follow_up_date"]].rename(columns={
-                "status": "Status", "title": "Title", "company": "Company",
-                "score": "Score", "applied_date": "Applied", "notes": "Notes",
-                "follow_up_date": "Follow-up",
-            }),
-            hide_index=True,
-            use_container_width=True,
-        )
-
-        # Update form
-        st.divider()
-        st.subheader("Update Application")
-        app_idx = st.selectbox("Select application:", apps.index,
-                               format_func=lambda i: f"{apps.loc[i, 'title']} @ {apps.loc[i, 'company']}")
-        if app_idx is not None:
-            c1, c2, c3 = st.columns(3)
-            new_status = c1.selectbox("New Status", statuses, key="update_status")
-            new_notes = c2.text_input("Notes", value=apps.loc[app_idx, "notes"] or "")
-            new_follow = c3.date_input("Follow-up Date", value=None)
-
-            if st.button("Save Changes"):
-                follow_str = new_follow.isoformat() if new_follow else None
-                update_application(apps.loc[app_idx, "job_id"], new_status, new_notes, follow_str)
-                st.success("Updated!")
-                st.rerun()
+        display_cols = [c for c in ["status", "job_id", "notes", "follow_up_date", "applied_date"] if c in apps.columns]
+        st.dataframe(apps[display_cols], hide_index=True, use_container_width=True)
 
 # ============================================================
-# TAB: REFERRALS
+# TAB 3: REFERRALS
 # ============================================================
 with tab_referrals:
     st.subheader("🤝 Referral & Networking Links")
-    st.caption("LinkedIn search links to find employees at top companies for warm intros")
+    st.caption("LinkedIn search links to find employees at top companies")
 
-    from src.referrals import get_referral_report, generate_referral_links
-
-    ref_report = get_referral_report(min_score=75, limit=10)
-
-    if not ref_report:
-        st.info("No jobs scoring 75+ yet. Run /find-jobs to identify top targets.")
+    if scored.empty:
+        st.info("No scored jobs yet.")
     else:
-        for entry in ref_report:
-            job = entry["job"]
-            with st.expander(f"**[{int(job['score'])}] {job['title']}** @ {job['company']} — {job['location']}", expanded=False):
-                cols = st.columns([2, 1])
-                with cols[0]:
-                    for link in entry["links"]:
-                        st.markdown(f"- [{link['label']}]({link['url']}) — _{link['purpose']}_")
-                with cols[1]:
-                    if job.get("job_url"):
-                        st.markdown(f"[View Job Posting →]({job['job_url']})")
+        import urllib.parse
+        top_jobs = scored[scored["score"] >= 75].head(20)
+        seen_companies = set()
+
+        for _, job in top_jobs.iterrows():
+            company = job.get("company", "")
+            if not company or company in seen_companies:
+                continue
+            seen_companies.add(company)
+            title = job.get("title", "")
+            role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
+
+            with st.expander(f"**[{int(job['score'])}] {title}** @ {company} — {job.get('location', '')}"):
+                links = [
+                    (f"People in similar roles at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}"),
+                    (f"Recruiters at {company}", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}"),
+                    (f"Supply Chain team at {company}", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}"),
+                    (f"UW Foster alumni at {company}", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%224399%22%5D"),
+                ]
+                for label, url in links:
+                    st.markdown(f"- [{label}]({url})")
+                if job.get("job_url"):
+                    st.markdown(f"\n[View Job Posting →]({job['job_url']})")
 
         st.divider()
         st.subheader("📝 Outreach Template")
-        st.code("""Hi [Name],
-
-I'm an incoming MSCM student at UW Foster (starting Fall 2026) with 3 years
-of operations experience at Uber. I noticed [Company] has a [Role] opening
-and I'd love to learn more about the team and culture.
-
-Would you be open to a 15-minute chat? Happy to work around your schedule.
-
-Best,
-Bhumika Choudhary""", language=None)
+        st.code("Hi [Name],\n\nI'm an incoming MSCM student at UW Foster (starting Fall 2026) with 3 years\nof operations experience at Uber. I noticed [Company] has a [Role] opening\nand I'd love to learn more about the team and culture.\n\nWould you be open to a 15-minute chat? Happy to work around your schedule.\n\nBest,\nBhumika Choudhary", language=None)
 
 # ============================================================
-# TAB: SKILLS GAP
+# TAB 4: SKILLS GAP
 # ============================================================
 with tab_skills:
     st.subheader("Skills Gap Analysis")
-    st.caption("Based on requirements from top-scoring job listings")
 
     if scored.empty or len(scored) < 5:
-        st.info("Need at least 5 scored jobs for skills gap analysis. Run /find-jobs first.")
+        st.info("Need at least 5 scored jobs. Run /find-jobs first.")
     else:
-        # Analyze skills from descriptions
         descriptions = scored[scored["score"] >= 55]["description"].dropna().tolist()
-
-        skills_to_check = {
-            "Python": ["python", "pandas", "numpy", "scikit"],
-            "Tableau": ["tableau"],
-            "Power BI": ["power bi", "powerbi"],
-            "SAP/ERP": ["sap", "s/4hana", "erp", "oracle scm"],
-            "R": ["r programming", " r,", "rstudio"],
-            "SQL": ["sql", "mysql", "postgresql"],
-            "Excel Advanced": ["vlookup", "pivot table", "macros", "vba"],
+        skills_check = {
+            "Python": ["python", "pandas", "numpy"], "Tableau": ["tableau"],
+            "Power BI": ["power bi", "powerbi"], "SAP/ERP": ["sap", "s/4hana", "erp"],
+            "SQL": ["sql", "mysql", "postgresql"], "Excel Advanced": ["vba", "macros", "power query"],
             "Forecasting": ["forecasting", "demand planning", "s&op"],
-            "Procurement": ["procurement", "sourcing", "rfp", "rfq"],
+            "Procurement": ["procurement", "sourcing", "rfp"],
             "Logistics": ["logistics", "freight", "3pl", "wms"],
-            "Six Sigma": ["lean", "six sigma", "kaizen", "dmaic"],
-            "APICS/CSCP": ["apics", "cscp", "cpim"],
+            "Six Sigma": ["lean", "six sigma", "kaizen"],
             "Project Management": ["pmp", "agile", "scrum"],
-            "Data Visualization": ["data visualization", "dashboard", "reporting"],
         }
-
-        has_skills = {"SQL", "Six Sigma", "Project Management", "Excel Advanced", "Data Visualization"}
+        has_skills = {"SQL", "Six Sigma", "Project Management", "Excel Advanced"}
 
         results = []
-        for skill, keywords in skills_to_check.items():
-            count = sum(1 for d in descriptions if any(kw.lower() in d.lower() for kw in keywords))
+        for skill, kws in skills_check.items():
+            count = sum(1 for d in descriptions if any(k in d.lower() for k in kws))
             pct = round(count / len(descriptions) * 100, 1) if descriptions else 0
-            results.append({
-                "Skill": skill,
-                "Requested In": f"{pct}% ({count}/{len(descriptions)})",
-                "Has It": "✅" if skill in has_skills else "❌ GAP",
-                "Priority": "—" if skill in has_skills else ("🔴 HIGH" if pct > 40 else "🟡 Medium" if pct > 20 else "🟢 Low"),
-                "pct": pct,
-            })
-
+            results.append({"Skill": skill, "Requested In": f"{pct}%", "Has It": "✅" if skill in has_skills else "❌ GAP", "pct": pct})
         results.sort(key=lambda x: x["pct"], reverse=True)
-        results_df = pd.DataFrame(results).drop(columns=["pct"])
-        st.dataframe(results_df, hide_index=True, use_container_width=True)
-
-        # Recommendations
-        gaps = [r for r in results if "GAP" in r["Has It"] and r["pct"] > 15]
-        if gaps:
-            st.divider()
-            st.subheader("📚 Recommended Focus Areas for MSCM Coursework")
-            for i, g in enumerate(gaps[:5], 1):
-                st.markdown(f"{i}. **{g['Skill']}** — {g['Requested In']}")
+        st.dataframe(pd.DataFrame(results).drop(columns=["pct"]), hide_index=True, use_container_width=True)
 
 # ============================================================
-# TAB 4: PORTFOLIO PROJECTS
+# TAB 5: PROJECTS
 # ============================================================
 with tab_projects:
     st.subheader("Portfolio Projects")
-    st.caption("Auto-generated projects to fill skill gaps and strengthen your resume")
-
-    # List existing projects
     if PROJECTS_DIR.exists():
-        project_dirs = [d for d in PROJECTS_DIR.iterdir() if d.is_dir()]
-        if project_dirs:
-            for pdir in sorted(project_dirs):
-                readme = pdir / "README.md"
-                if readme.exists():
-                    content = readme.read_text()
-                    title_line = content.split("\n")[0].replace("# ", "")
-                    with st.expander(f"📁 {title_line}", expanded=False):
-                        st.markdown(content[:5000])
-
-                        # Download button for this project
-                        st.download_button(
-                            "Download Project Guide",
-                            data=content,
-                            file_name=f"{pdir.name}-guide.md",
-                            mime="text/markdown",
-                            key=f"dl_{pdir.name}",
-                        )
-        else:
-            st.info("No projects generated yet. Run `/generate-projects` in Claude Code to create them based on your skills gaps.")
+        for pdir in sorted(PROJECTS_DIR.iterdir()):
+            if pdir.is_dir() and (pdir / "README.md").exists():
+                content = (pdir / "README.md").read_text()
+                title = content.split("\n")[0].replace("# ", "")
+                with st.expander(f"📁 {title}"):
+                    st.markdown(content[:5000])
+                    st.download_button("Download Guide", content, f"{pdir.name}.md", "text/markdown", key=f"dl_{pdir.name}")
     else:
-        st.info("No projects generated yet. Run `/generate-projects` in Claude Code.")
-
-    st.divider()
-    st.subheader("How Projects Are Generated")
-    st.markdown("""
-    1. The system analyzes **top-scoring job descriptions** to find commonly requested skills
-    2. Skills you already have (SQL, Six Sigma, project management, etc.) are excluded
-    3. For each **gap**, a detailed project guide is created that:
-       - Teaches the skill from scratch (beginner-friendly)
-       - Is completable in 1-2 weeks
-       - Produces a portfolio piece for your resume
-       - Includes a ready-to-use resume bullet point
-    4. Projects are regenerated as new job data comes in, keeping recommendations current
-    """)
+        st.info("No projects yet. Run `/generate-projects`.")
 
 # ============================================================
-# TAB 5: EXPORT
+# TAB 6: EXPORT
 # ============================================================
 with tab_export:
     st.subheader("Export Data")
+    if not scored.empty:
+        csv = scored[["title", "company", "location", "job_url", "score", "job_type", "region"]].to_csv(index=False)
+        st.download_button("📥 Download All Jobs (CSV)", csv, "jobs.csv", "text/csv")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("### 📋 Today's Report")
-        today = datetime.now().strftime("%Y-%m-%d")
-        report_path = OUTPUT_DIR / f"report-{today}.md"
-        if report_path.exists():
-            report_content = report_path.read_text()
-            st.download_button("Download Report (Markdown)", report_content,
-                             file_name=f"job-report-{today}.md", mime="text/markdown")
-        else:
-            st.info("No report generated today yet. Run /find-jobs first.")
-
-        st.markdown("### 📊 All Scored Jobs (CSV)")
-        if not scored.empty:
-            csv_data = scored[["title", "company", "location", "job_url", "score",
-                              "job_type", "region", "salary_min", "salary_max",
-                              "date_posted", "source"]].to_csv(index=False)
-            st.download_button("Download Jobs CSV", csv_data,
-                             file_name=f"jobs-{today}.csv", mime="text/csv")
-
-    with col2:
-        st.markdown("### 📊 Application Tracker")
-        apps_export = get_applications()
-        if not apps_export.empty:
-            apps_csv = apps_export.to_csv(index=False)
-            st.download_button("Download Applications CSV", apps_csv,
-                             file_name=f"applications-{today}.csv", mime="text/csv")
-        else:
-            st.info("No applications tracked yet.")
-
-        st.markdown("### 📦 Full Export (ZIP)")
-        if st.button("Generate Full ZIP Export"):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                # Add report
-                if report_path.exists():
-                    zf.writestr(f"report-{today}.md", report_path.read_text())
-
-                # Add jobs CSV
-                if not scored.empty:
-                    zf.writestr(f"jobs-{today}.csv", scored.to_csv(index=False))
-
-                # Add applications
-                if not apps_export.empty:
-                    zf.writestr(f"applications-{today}.csv", apps_export.to_csv(index=False))
-
-                # Add all project guides
-                if PROJECTS_DIR.exists():
-                    for pdir in PROJECTS_DIR.iterdir():
-                        if pdir.is_dir():
-                            for f in pdir.rglob("*"):
-                                if f.is_file():
-                                    zf.writestr(f"projects/{pdir.name}/{f.name}", f.read_text())
-
-                # Add skills gap
-                gap_path = OUTPUT_DIR / f"skills-gap-{today}.md"
-                if gap_path.exists():
-                    zf.writestr(f"skills-gap-{today}.md", gap_path.read_text())
-
-            st.download_button("📥 Download ZIP", zip_buffer.getvalue(),
-                             file_name=f"mscm-export-{today}.zip", mime="application/zip")
+    apps_exp = load_applications_from_firestore()
+    if not apps_exp.empty:
+        st.download_button("📥 Download Applications (CSV)", apps_exp.to_csv(index=False), "applications.csv", "text/csv")
 
 # --- FOOTER ---
 st.divider()
-col1, col2 = st.columns(2)
-col1.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-col2.caption(f"Database: {DB_PATH} | {len(all_jobs)} jobs tracked")
+st.caption(f"Data source: Firebase (mscm-5591c) | Last loaded: {datetime.now().strftime('%H:%M')} | Powered by Claude Code")
