@@ -330,11 +330,11 @@ with tab_referrals:
         seen_companies = set()
 
         for _, job in top_jobs.iterrows():
-            company = job.get("company", "")
+            company = str(job.get("company", "") or "")
             if not company or company in seen_companies:
                 continue
             seen_companies.add(company)
-            title = job.get("title", "")
+            title = str(job.get("title", "") or "")
             role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
 
             with st.expander(f"**{company}** — {title} · {job.get('location', '')}"):
