@@ -132,7 +132,7 @@
     "distance_miles": 30,
     "job_types": ["fulltime", "internship"],
     "scrape_job_types_separately": true,
-    "hours_old": 24,
+    "hours_old": 72,
     "results_per_search": 100,
     "country": "USA",
     "min_salary": 70000,
