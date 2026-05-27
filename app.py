@@ -140,12 +140,23 @@ with tab_jobs:
             if df.empty:
                 st.info(f"No {name} jobs matching filters.")
                 return
-            display = df[["score", "title", "company", "location"]].copy()
+            display = df[["score", "title", "company", "location", "job_url"]].copy()
             display["score"] = display["score"].astype(int)
-            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location"})
+            display = display.rename(columns={"score": "Score", "title": "Title", "company": "Company", "location": "Location", "job_url": "Link"})
+
+            # Determine which row is currently selected
+            current_sel = st.session_state.get("selected_job_idx")
+            default_selection = []
+            if current_sel is not None and current_sel in df.index:
+                pos = list(df.index).index(current_sel)
+                default_selection = [pos]
+
             event = st.dataframe(
                 display,
-                column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100)},
+                column_config={
+                    "Link": st.column_config.LinkColumn("Apply", display_text="Apply →"),
+                    "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100),
+                },
                 hide_index=True, use_container_width=True,
                 on_select="rerun", selection_mode="single-row", key=key,
             )
@@ -177,13 +188,13 @@ with tab_jobs:
                 sel_idx = jobs.index[0]
 
             job = jobs.loc[sel_idx]
-            st.subheader(f"📄 {job['title']} @ {job['company']}")
+            st.markdown(f"### 📄 {job['title']}")
+            st.markdown(f"**{job['company']}** · {job.get('location', '')} · Score: **{int(job['score'])}/100**")
+            st.caption("👆 Click any row in the table above to view details here")
             c1, c2 = st.columns([2, 1])
             with c1:
-                st.markdown(f"### {job['title']}")
-                st.markdown(f"**{job['company']}** — {job.get('location', '')}")
                 if job.get("job_url"):
-                    st.markdown(f"[Apply Here]({job['job_url']})")
+                    st.markdown(f"🔗 [Apply Here]({job['job_url']})")
                 if job.get("description"):
                     with st.expander("Full Description"):
                         st.markdown(str(job["description"])[:3000])
