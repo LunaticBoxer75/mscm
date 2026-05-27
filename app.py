@@ -169,19 +169,15 @@ with tab_jobs:
         with sub_tabs[4]:
             render_table(jobs, "all", "t_all")
 
-        # Job detail panel
+        # Job detail panel — driven by table row selection
         if not jobs.empty:
             st.divider()
-            st.subheader("Job Details")
             sel_idx = st.session_state.get("selected_job_idx")
             if sel_idx is None or sel_idx not in jobs.index:
                 sel_idx = jobs.index[0]
 
-            sel_idx = st.selectbox("Selected job:", jobs.index,
-                                   index=list(jobs.index).index(sel_idx) if sel_idx in jobs.index else 0,
-                                   format_func=lambda i: f"[{int(jobs.loc[i, 'score'])}] {jobs.loc[i, 'title']} @ {jobs.loc[i, 'company']}",
-                                   key="detail_sel")
             job = jobs.loc[sel_idx]
+            st.subheader(f"📄 {job['title']} @ {job['company']}")
             c1, c2 = st.columns([2, 1])
             with c1:
                 st.markdown(f"### {job['title']}")
