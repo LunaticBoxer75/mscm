@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSCM Job Search — Bhumika</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #0d9488;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: var(--primary); color: white; padding: 20px 0; margin-bottom: 24px; }
+        header .container { display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 1.5rem; }
+        header .subtitle { opacity: 0.8; font-size: 0.9rem; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .metric-card { background: var(--card); border-radius: 12px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .metric-card .value { font-size: 2rem; font-weight: 700; color: var(--primary); }
+        .metric-card .label { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+        .tab { padding: 10px 20px; cursor: pointer; border-radius: 8px 8px 0 0; font-weight: 500; color: var(--muted); }
+        .tab.active { background: var(--primary); color: white; }
+        .tab:hover:not(.active) { background: var(--border); }
+        .job-list { display: flex; flex-direction: column; gap: 12px; }
+        .job-card { background: var(--card); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 16px; transition: transform 0.1s; }
+        .job-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .score-badge { width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem; color: white; flex-shrink: 0; }
+        .score-90 { background: #059669; }
+        .score-75 { background: #0d9488; }
+        .score-60 { background: #f59e0b; }
+        .score-50 { background: #6b7280; }
+        .job-info { flex: 1; }
+        .job-info h3 { font-size: 1rem; margin-bottom: 4px; }
+        .job-info .company { color: var(--primary); font-weight: 500; }
+        .job-info .meta { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+        .job-info .reasoning { color: var(--text); font-size: 0.85rem; margin-top: 6px; font-style: italic; }
+        .job-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .btn { padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; text-decoration: none; font-weight: 500; border: none; cursor: pointer; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { border: 1px solid var(--border); background: white; color: var(--text); }
+        .section-title { font-size: 1.2rem; font-weight: 600; margin: 24px 0 12px; }
+        .empty-state { text-align: center; padding: 40px; color: var(--muted); }
+        .filters { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .filter-chip { padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border); background: white; cursor: pointer; font-size: 0.85rem; }
+        .filter-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .loading { text-align: center; padding: 60px; color: var(--muted); }
+        @media (max-width: 768px) {
+            .job-card { flex-direction: column; align-items: flex-start; }
+            .metrics { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div>
+                <h1>🎯 MSCM Job Search</h1>
+                <div class="subtitle">Daily results for Bhumika — UW Foster MSCM</div>
+            </div>
+            <div class="subtitle" id="last-updated"></div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="metrics" id="metrics">
+            <div class="metric-card"><div class="value" id="m-total">-</div><div class="label">Total Jobs</div></div>
+            <div class="metric-card"><div class="value" id="m-excellent">-</div><div class="label">Excellent (90+)</div></div>
+            <div class="metric-card"><div class="value" id="m-strong">-</div><div class="label">Strong (75-89)</div></div>
+            <div class="metric-card"><div class="value" id="m-good">-</div><div class="label">Good (60-74)</div></div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="seattle-ft">Seattle FT</div>
+            <div class="tab" data-tab="seattle-intern">Seattle Intern</div>
+            <div class="tab" data-tab="national-ft">National FT</div>
+            <div class="tab" data-tab="national-intern">National Intern</div>
+            <div class="tab" data-tab="all">All</div>
+        </div>
+
+        <div class="filters">
+            <span class="filter-chip active" data-min="50">50+</span>
+            <span class="filter-chip" data-min="60">60+</span>
+            <span class="filter-chip" data-min="75">75+</span>
+            <span class="filter-chip" data-min="90">90+</span>
+        </div>
+
+        <div class="job-list" id="job-list">
+            <div class="loading">Loading jobs from Firebase...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, collection, query, where, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAHr5kdhwK8tmsP-zs9PZuxoxEtg4IMB_k",
+            authDomain: "mscm-5591c.firebaseapp.com",
+            projectId: "mscm-5591c",
+            storageBucket: "mscm-5591c.firebasestorage.app",
+            messagingSenderId: "107955801456",
+            appId: "1:107955801456:web:57ae59435bf4d9456b13b5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let allJobs = [];
+        let currentTab = "seattle-ft";
+        let minScore = 50;
+
+        async function loadJobs() {
+            const jobsRef = collection(db, "jobs");
+            const q = query(jobsRef, where("score", ">=", 50), orderBy("score", "desc"));
+            const snapshot = await getDocs(q);
+            allJobs = snapshot.docs.map(doc => doc.data());
+            updateMetrics();
+            renderJobs();
+            document.getElementById("last-updated").textContent = `${allJobs.length} jobs loaded`;
+        }
+
+        function updateMetrics() {
+            document.getElementById("m-total").textContent = allJobs.length;
+            document.getElementById("m-excellent").textContent = allJobs.filter(j => j.score >= 90).length;
+            document.getElementById("m-strong").textContent = allJobs.filter(j => j.score >= 75 && j.score < 90).length;
+            document.getElementById("m-good").textContent = allJobs.filter(j => j.score >= 60 && j.score < 75).length;
+        }
+
+        function filterJobs() {
+            let filtered = allJobs.filter(j => (j.score || 0) >= minScore);
+
+            if (currentTab === "seattle-ft") {
+                filtered = filtered.filter(j => (j.region === "seattle" || !j.region) && j.job_type !== "internship");
+            } else if (currentTab === "seattle-intern") {
+                filtered = filtered.filter(j => (j.region === "seattle" || !j.region) && j.job_type === "internship");
+            } else if (currentTab === "national-ft") {
+                filtered = filtered.filter(j => j.region === "national" && j.job_type !== "internship");
+            } else if (currentTab === "national-intern") {
+                filtered = filtered.filter(j => j.region === "national" && j.job_type === "internship");
+            }
+
+            return filtered;
+        }
+
+        function getScoreClass(score) {
+            if (score >= 90) return "score-90";
+            if (score >= 75) return "score-75";
+            if (score >= 60) return "score-60";
+            return "score-50";
+        }
+
+        function renderJobs() {
+            const jobs = filterJobs();
+            const container = document.getElementById("job-list");
+
+            if (jobs.length === 0) {
+                container.innerHTML = '<div class="empty-state">No jobs match this filter.</div>';
+                return;
+            }
+
+            container.innerHTML = jobs.map(job => {
+                let breakdown = {};
+                try { breakdown = typeof job.score_breakdown === "string" ? JSON.parse(job.score_breakdown) : (job.score_breakdown || {}); } catch(e) {}
+                const reasoning = breakdown.reasoning || "";
+                const salary = job.salary_min ? `$${Math.round(job.salary_min/1000)}K${job.salary_max ? `-${Math.round(job.salary_max/1000)}K` : "+"}` : "";
+
+                return `<div class="job-card">
+                    <div class="score-badge ${getScoreClass(job.score)}">${Math.round(job.score)}</div>
+                    <div class="job-info">
+                        <h3>${job.title || "Unknown"}</h3>
+                        <span class="company">${job.company || "Unknown"}</span>
+                        <div class="meta">${job.location || ""} ${salary ? "• " + salary : ""} ${job.job_type === "internship" ? "• 🎓 Internship" : ""}</div>
+                        ${reasoning ? `<div class="reasoning">${reasoning}</div>` : ""}
+                    </div>
+                    <div class="job-actions">
+                        ${job.job_url ? `<a href="${job.job_url}" target="_blank" class="btn btn-primary">Apply →</a>` : ""}
+                    </div>
+                </div>`;
+            }).join("");
+        }
+
+        // Tab switching
+        document.querySelectorAll(".tab").forEach(tab => {
+            tab.addEventListener("click", () => {
+                document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+                tab.classList.add("active");
+                currentTab = tab.dataset.tab;
+                renderJobs();
+            });
+        });
+
+        // Filter chips
+        document.querySelectorAll(".filter-chip").forEach(chip => {
+            chip.addEventListener("click", () => {
+                document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+                chip.classList.add("active");
+                minScore = parseInt(chip.dataset.min);
+                renderJobs();
+            });
+        });
+
+        // Load on page ready
+        loadJobs().catch(err => {
+            document.getElementById("job-list").innerHTML = `<div class="empty-state">Error loading: ${err.message}<br>Firebase config may need updating.</div>`;
+        });
+    </script>
+</body>
+</html>
