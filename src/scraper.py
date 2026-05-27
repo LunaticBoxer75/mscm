@@ -132,7 +132,13 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                             continue
 
                         is_remote = 1 if row.get("is_remote") else 0
-                        title_str = str(row.get("title", ""))
+                        title_str = str(row.get("title", "")) if pd.notna(row.get("title")) else ""
+                        company_str = str(row.get("company", "")) if pd.notna(row.get("company")) else ""
+
+                        # Skip entries with no title or company
+                        if not title_str or not company_str:
+                            continue
+
                         # Override job_type if title clearly indicates intern/co-op
                         effective_type = jtype
                         if any(kw in title_str.lower() for kw in ["intern", "co-op", "coop", "new grad"]):
@@ -141,10 +147,10 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                         job_data = {
                             "job_id": job_id,
                             "title": title_str,
-                            "company": str(row.get("company", "")),
-                            "location": str(row.get("location", "")),
-                            "job_url": str(row.get("job_url", "")),
-                            "description": str(row.get("description", ""))[:10000],
+                            "company": company_str,
+                            "location": str(row.get("location", "")) if pd.notna(row.get("location")) else "",
+                            "job_url": str(row.get("job_url", "")) if pd.notna(row.get("job_url")) else "",
+                            "description": str(row.get("description", ""))[:10000] if pd.notna(row.get("description")) else "",
                             "job_type": effective_type,
                             "date_posted": str(row.get("date_posted", "")),
                             "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
