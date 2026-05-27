@@ -130,9 +130,9 @@ st.sidebar.header("Export")
 export_format = st.sidebar.selectbox("Export Format", ["CSV", "JSON", "Full ZIP"])
 
 # --- MAIN TABS ---
-tab_jobs, tab_tracker, tab_skills, tab_projects, tab_export = st.tabs([
-    "📋 Job Listings", "📊 Application Tracker", "🎓 Skills Gap",
-    "🛠️ Projects", "📤 Export"
+tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
+    "📋 Job Listings", "📊 Application Tracker", "🤝 Referrals",
+    "🎓 Skills Gap", "🛠️ Projects", "📤 Export"
 ])
 
 # ============================================================
@@ -322,7 +322,45 @@ with tab_tracker:
                 st.rerun()
 
 # ============================================================
-# TAB 3: SKILLS GAP
+# TAB: REFERRALS
+# ============================================================
+with tab_referrals:
+    st.subheader("🤝 Referral & Networking Links")
+    st.caption("LinkedIn search links to find employees at top companies for warm intros")
+
+    from src.referrals import get_referral_report, generate_referral_links
+
+    ref_report = get_referral_report(min_score=75, limit=10)
+
+    if not ref_report:
+        st.info("No jobs scoring 75+ yet. Run /find-jobs to identify top targets.")
+    else:
+        for entry in ref_report:
+            job = entry["job"]
+            with st.expander(f"**[{int(job['score'])}] {job['title']}** @ {job['company']} — {job['location']}", expanded=False):
+                cols = st.columns([2, 1])
+                with cols[0]:
+                    for link in entry["links"]:
+                        st.markdown(f"- [{link['label']}]({link['url']}) — _{link['purpose']}_")
+                with cols[1]:
+                    if job.get("job_url"):
+                        st.markdown(f"[View Job Posting →]({job['job_url']})")
+
+        st.divider()
+        st.subheader("📝 Outreach Template")
+        st.code("""Hi [Name],
+
+I'm an incoming MSCM student at UW Foster (starting Fall 2026) with 3 years
+of operations experience at Uber. I noticed [Company] has a [Role] opening
+and I'd love to learn more about the team and culture.
+
+Would you be open to a 15-minute chat? Happy to work around your schedule.
+
+Best,
+Bhumika Choudhary""", language=None)
+
+# ============================================================
+# TAB: SKILLS GAP
 # ============================================================
 with tab_skills:
     st.subheader("Skills Gap Analysis")
