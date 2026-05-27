@@ -199,13 +199,13 @@ with tab_jobs:
             if df.empty:
                 st.info(f"No {name} jobs matching filters.")
                 return
-            display = df[["score", "title", "company", "location", "job_url"]].copy().reset_index(drop=False)
+            display = df[["score", "title", "company", "location", "job_url", "salary_min", "salary_max"]].copy().reset_index(drop=False)
             display["score"] = display["score"].astype(int)
 
             # Scrollable container with compact rows
             with st.container(height=400):
                 for i, row in display.iterrows():
-                    col_btn, col_info, col_link = st.columns([0.4, 6, 1])
+                    col_btn, col_info, col_salary, col_link = st.columns([0.4, 5, 1.5, 1])
                     score = row["score"]
                     color = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
                     with col_btn:
@@ -213,6 +213,13 @@ with tab_jobs:
                             st.session_state["selected_job_idx"] = row["index"]
                     with col_info:
                         st.markdown(f"<span style='font-size:0.9em'><b>{row['title']}</b> @ {row['company']} · {row['location']}</span>", unsafe_allow_html=True)
+                    with col_salary:
+                        sal_min = row.get("salary_min")
+                        sal_max = row.get("salary_max")
+                        if pd.notna(sal_min) and pd.notna(sal_max):
+                            st.markdown(f"<span style='font-size:0.85em;color:#059669'>${int(sal_min/1000)}K-${int(sal_max/1000)}K</span>", unsafe_allow_html=True)
+                        elif pd.notna(sal_min):
+                            st.markdown(f"<span style='font-size:0.85em;color:#059669'>${int(sal_min/1000)}K+</span>", unsafe_allow_html=True)
                     with col_link:
                         if row.get("job_url"):
                             st.markdown(f"<a href='{row['job_url']}' target='_blank' style='font-size:0.85em'>Apply→</a>", unsafe_allow_html=True)
