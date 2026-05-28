@@ -163,6 +163,7 @@ def sync_from_sqlite(min_score=60, limit=2000):
         FROM jobs
         WHERE score IS NOT NULL AND score >= ?
         AND title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != ''
+        AND (dismissed IS NULL OR dismissed = 0)
         ORDER BY score DESC
         LIMIT ?
     """, (min_score, limit))

@@ -111,15 +111,30 @@ def update_contact_status_firestore(doc_id, status, notes=None):
 
 
 def delete_job_firestore(job_id):
-    """Remove a job from the current report (dismiss/hide)."""
+    """Dismiss a job — removes from report and marks in SQLite so it never comes back."""
+    # Remove from current Firestore report
     db = get_firestore_client()
     today = datetime.now().strftime("%Y-%m-%d")
-    doc_ref = db.collection("reports").document(today)
-    doc = doc_ref.get()
-    if doc.exists:
-        data = doc.to_dict()
-        jobs = [j for j in data.get("jobs", []) if j.get("job_id") != job_id]
-        doc_ref.update({"jobs": jobs})
+    try:
+        doc_ref = db.collection("reports").document(today)
+        doc = doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict()
+            jobs = [j for j in data.get("jobs", []) if j.get("job_id") != job_id]
+            doc_ref.update({"jobs": jobs})
+    except Exception:
+        pass
+
+    # Mark as dismissed in local SQLite (prevents re-sync)
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent / "data" / "jobs.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE jobs SET dismissed = 1 WHERE job_id = ?", (job_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def update_application_firestore(job_id, status, notes=None, follow_up_date=None):
