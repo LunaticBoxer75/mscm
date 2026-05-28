@@ -32,7 +32,6 @@ def load_jobs(min_score=50):
         AND company IS NOT NULL AND company != ''
         AND (dismissed IS NULL OR dismissed = 0)
         ORDER BY score DESC
-        LIMIT 500
     """, conn, params=(min_score,))
     conn.close()
     return df
