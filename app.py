@@ -103,6 +103,20 @@ if DB_PATH.exists():
     company_options += [r[0] for r in top_companies]
 company_filter = st.sidebar.selectbox("Company", company_options)
 
+# Job title filter
+title_options = ["All Titles"]
+if DB_PATH.exists():
+    _conn2 = get_db()
+    top_titles = _conn2.execute("""
+        SELECT title, COUNT(*) as cnt FROM jobs
+        WHERE score >= 60 AND (dismissed IS NULL OR dismissed = 0)
+        AND title IS NOT NULL AND title != ''
+        GROUP BY title ORDER BY cnt DESC LIMIT 50
+    """).fetchall()
+    _conn2.close()
+    title_options += [r[0] for r in top_titles]
+title_filter = st.sidebar.selectbox("Job Title", title_options)
+
 # --- LOAD DATA ---
 all_jobs = load_jobs(min_score=min_score)
 scored = all_jobs if not all_jobs.empty else pd.DataFrame()
@@ -148,6 +162,8 @@ def filter_jobs(df):
         filtered = filtered[filtered["date_posted"].fillna("") >= cutoff]
     if company_filter != "All Companies":
         filtered = filtered[filtered["company"] == company_filter]
+    if title_filter != "All Titles":
+        filtered = filtered[filtered["title"] == title_filter]
     return filtered
 
 
