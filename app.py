@@ -89,6 +89,20 @@ type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"]
 date_options = ["All Time", "Last 24 hours", "Last 3 days", "Last 7 days", "Last 30 days"]
 date_filter = st.sidebar.selectbox("Posted", date_options)
 
+# Company filter
+company_options = ["All Companies"]
+if DB_PATH.exists():
+    _conn = get_db()
+    top_companies = _conn.execute("""
+        SELECT company, COUNT(*) as cnt FROM jobs
+        WHERE score >= 60 AND (dismissed IS NULL OR dismissed = 0)
+        AND company IS NOT NULL AND company != ''
+        GROUP BY company ORDER BY cnt DESC LIMIT 50
+    """).fetchall()
+    _conn.close()
+    company_options += [r[0] for r in top_companies]
+company_filter = st.sidebar.selectbox("Company", company_options)
+
 # --- LOAD DATA ---
 all_jobs = load_jobs(min_score=min_score)
 scored = all_jobs if not all_jobs.empty else pd.DataFrame()
@@ -132,6 +146,8 @@ def filter_jobs(df):
         days = days_map.get(date_filter, 9999)
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         filtered = filtered[filtered["date_posted"].fillna("") >= cutoff]
+    if company_filter != "All Companies":
+        filtered = filtered[filtered["company"] == company_filter]
     return filtered
 
 
