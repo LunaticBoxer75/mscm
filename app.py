@@ -42,22 +42,30 @@ def get_firestore_client():
 
 @st.cache_data(ttl=300)
 def load_jobs_from_firestore(min_score=None):
-    """Load scored jobs from Firestore. Cached for 5 min to avoid slow reloads."""
+    """Load jobs from Firestore daily report document. Single read, fast."""
     db = get_firestore_client()
-    jobs_ref = db.collection("jobs")
 
-    # Only fetch jobs with score >= threshold (reduces load from 10K+ to relevant subset)
-    effective_min = max(min_score or 50, 50)
-    q = jobs_ref.where("score", ">=", effective_min).order_by("score", direction=firestore.Query.DESCENDING).limit(500)
+    # Try today's report first, fall back to latest
+    today = datetime.now().strftime("%Y-%m-%d")
+    doc = db.collection("reports").document(today).get()
+    if not doc.exists:
+        # Get most recent report
+        docs = db.collection("reports").order_by("date", direction=firestore.Query.DESCENDING).limit(1).stream()
+        doc = next(docs, None)
+        if doc is None:
+            return pd.DataFrame()
+        doc = doc
 
-    docs = q.stream()
-    jobs = []
-    for doc in docs:
-        data = doc.to_dict()
-        data["_doc_id"] = doc.id
-        if data.get("score") is not None and data.get("title") and data.get("company"):
-            jobs.append(data)
-    return pd.DataFrame(jobs) if jobs else pd.DataFrame()
+    data = doc.to_dict() if hasattr(doc, 'to_dict') else doc
+    jobs = data.get("jobs", [])
+
+    if not jobs:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(jobs)
+    if min_score and "score" in df.columns:
+        df = df[df["score"] >= min_score]
+    return df
 
 
 def load_applications_from_firestore():
@@ -103,9 +111,15 @@ def update_contact_status_firestore(doc_id, status, notes=None):
 
 
 def delete_job_firestore(job_id):
-    """Delete a job from Firestore (hide/dismiss)."""
+    """Remove a job from the current report (dismiss/hide)."""
     db = get_firestore_client()
-    db.collection("jobs").document(job_id).delete()
+    today = datetime.now().strftime("%Y-%m-%d")
+    doc_ref = db.collection("reports").document(today)
+    doc = doc_ref.get()
+    if doc.exists:
+        data = doc.to_dict()
+        jobs = [j for j in data.get("jobs", []) if j.get("job_id") != job_id]
+        doc_ref.update({"jobs": jobs})
 
 
 def update_application_firestore(job_id, status, notes=None, follow_up_date=None):

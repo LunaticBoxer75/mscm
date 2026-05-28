@@ -81,15 +81,15 @@ Run the full MSCM job search pipeline: scrape job boards, score against Bhumika'
    "
    ```
 
-8. Sync everything to Firebase (ensures cloud is up-to-date):
+8. Publish report to Firebase (single document, fast):
    ```
    cd /Users/aniketsw/workspaces/mscm && python -c "
-   from src.firebase_db import sync_full_db, is_available
+   from src.firebase_db import sync_from_sqlite, is_available
    if is_available():
-       result = sync_full_db()
-       print(f'Firebase synced: {result[\"jobs\"]} jobs, {result[\"applications\"]} applications')
+       result = sync_from_sqlite()
+       print(f'Published: {result[\"jobs\"]} top jobs to Firebase')
    else:
-       print('Firebase not configured — skipping cloud sync')
+       print('Firebase not configured — skipping')
    "
    ```
 
