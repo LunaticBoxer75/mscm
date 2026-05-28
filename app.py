@@ -1,227 +1,134 @@
 """MSCM Job Search Dashboard — Streamlit web UI.
 
-Reads all data from Google Firestore (same source locally and deployed).
+Reads from SQLite database (bundled in repo via git). Same file locally and deployed.
+No external database needed.
 """
 
 import json
-import zipfile
-import io
-from datetime import datetime
+import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
 
 PROJECTS_DIR = Path(__file__).parent / "projects"
-OUTPUT_DIR = Path(__file__).parent / "output"
-CONFIG_DIR = Path(__file__).parent / "config"
+DB_PATH = Path(__file__).parent / "data" / "jobs_deploy.db"
 
 st.set_page_config(page_title="MSCM Job Search", page_icon="🎯", layout="wide")
 
 
-# --- FIREBASE INIT ---
-@st.cache_resource
-def get_firestore_client():
-    """Initialize Firestore client. Works locally (credentials file) and deployed (secrets)."""
-    if not firebase_admin._apps:
-        creds_path = CONFIG_DIR / "firebase-credentials.json"
-        if creds_path.exists():
-            cred = credentials.Certificate(str(creds_path))
-        elif "FIREBASE_CREDENTIALS_JSON" in st.secrets:
-            # Stored as a single JSON string — avoids TOML escaping issues with private_key
-            creds_dict = json.loads(st.secrets["FIREBASE_CREDENTIALS_JSON"])
-            cred = credentials.Certificate(creds_dict)
-        else:
-            st.error("Firebase credentials not found. Set FIREBASE_CREDENTIALS_JSON in Streamlit secrets.")
-            st.stop()
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+def get_db():
+    return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
-@st.cache_data(ttl=300)
-def load_jobs_from_firestore(min_score=None):
-    """Load jobs from Firestore daily report document. Single read, fast."""
-    db = get_firestore_client()
-
-    # Try today's report first, fall back to latest
-    today = datetime.now().strftime("%Y-%m-%d")
-    doc = db.collection("reports").document(today).get()
-    if not doc.exists:
-        # Get most recent report
-        docs = db.collection("reports").order_by("date", direction=firestore.Query.DESCENDING).limit(1).stream()
-        doc = next(docs, None)
-        if doc is None:
-            return pd.DataFrame()
-        doc = doc
-
-    data = doc.to_dict() if hasattr(doc, 'to_dict') else doc
-    jobs = data.get("jobs", [])
-
-    if not jobs:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(jobs)
-    if min_score and "score" in df.columns:
-        df = df[df["score"] >= min_score]
+@st.cache_data(ttl=60)
+def load_jobs(min_score=50):
+    conn = get_db()
+    df = pd.read_sql_query("""
+        SELECT * FROM jobs
+        WHERE score IS NOT NULL AND score >= ?
+        AND title IS NOT NULL AND title != ''
+        AND company IS NOT NULL AND company != ''
+        AND (dismissed IS NULL OR dismissed = 0)
+        ORDER BY score DESC
+        LIMIT 500
+    """, conn, params=(min_score,))
+    conn.close()
     return df
 
 
-def load_applications_from_firestore():
-    """Load applications from Firestore."""
-    db = get_firestore_client()
-    apps_ref = db.collection("applications")
-    docs = apps_ref.stream()
-    apps = [doc.to_dict() for doc in docs]
-    return pd.DataFrame(apps) if apps else pd.DataFrame()
-
-
-def load_contacts_from_firestore():
-    """Load saved contacts from Firestore."""
-    db = get_firestore_client()
-    contacts_ref = db.collection("contacts")
-    docs = contacts_ref.stream()
-    contacts = [doc.to_dict() for doc in docs]
-    return pd.DataFrame(contacts) if contacts else pd.DataFrame()
-
-
-def save_contact_firestore(name, company, role, linkedin_url, notes="", status="to_reach_out"):
-    """Save a contact for networking/referral."""
-    db = get_firestore_client()
-    doc_id = f"{company}_{name}".replace(" ", "_").lower()
-    db.collection("contacts").document(doc_id).set({
-        "name": name,
-        "company": company,
-        "role": role,
-        "linkedin_url": linkedin_url,
-        "notes": notes,
-        "status": status,
-        "added_at": datetime.now().isoformat(),
-    }, merge=True)
-
-
-def update_contact_status_firestore(doc_id, status, notes=None):
-    """Update a contact's outreach status."""
-    db = get_firestore_client()
-    update = {"status": status, "updated_at": datetime.now().isoformat()}
-    if notes is not None:
-        update["notes"] = notes
-    db.collection("contacts").document(doc_id).set(update, merge=True)
-
-
-def delete_job_firestore(job_id):
-    """Dismiss a job — removes from report and marks in SQLite so it never comes back."""
-    # Remove from current Firestore report
-    db = get_firestore_client()
-    today = datetime.now().strftime("%Y-%m-%d")
+def load_applications():
+    conn = get_db()
     try:
-        doc_ref = db.collection("reports").document(today)
-        doc = doc_ref.get()
-        if doc.exists:
-            data = doc.to_dict()
-            jobs = [j for j in data.get("jobs", []) if j.get("job_id") != job_id]
-            doc_ref.update({"jobs": jobs})
+        df = pd.read_sql_query("""
+            SELECT a.*, j.title, j.company, j.location, j.score, j.job_url
+            FROM applications a JOIN jobs j ON a.job_id = j.job_id
+            ORDER BY CASE a.status WHEN 'interviewing' THEN 1 WHEN 'applied' THEN 2
+                WHEN 'offer' THEN 3 ELSE 4 END, j.score DESC
+        """, conn)
     except Exception:
-        pass
-
-    # Mark as dismissed in local SQLite (prevents re-sync)
-    try:
-        import sqlite3
-        db_path = Path(__file__).parent / "data" / "jobs.db"
-        conn = sqlite3.connect(db_path)
-        conn.execute("UPDATE jobs SET dismissed = 1 WHERE job_id = ?", (job_id,))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
+        df = pd.DataFrame()
+    conn.close()
+    return df
 
 
-def update_application_firestore(job_id, status, notes=None, follow_up_date=None):
-    """Update application status in Firestore."""
-    db = get_firestore_client()
-    doc_ref = db.collection("applications").document(job_id)
-    doc_ref.set({
-        "job_id": job_id,
-        "status": status,
-        "notes": notes,
-        "follow_up_date": follow_up_date,
-        "updated_at": datetime.now().isoformat(),
-        "applied_date": datetime.now().isoformat() if status == "applied" else None,
-    }, merge=True)
+def dismiss_job(job_id):
+    conn = get_db()
+    conn.execute("UPDATE jobs SET dismissed = 1 WHERE job_id = ?", (job_id,))
+    conn.commit()
+    conn.close()
+    load_jobs.clear()
+
+
+def update_application(job_id, status, notes=None, follow_up_date=None):
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS applications (
+        job_id TEXT PRIMARY KEY, status TEXT, applied_date TEXT,
+        notes TEXT, follow_up_date TEXT, updated_at TEXT)""")
+    now = datetime.now().isoformat()
+    conn.execute("""
+        INSERT INTO applications (job_id, status, applied_date, notes, follow_up_date, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET
+        status=excluded.status, notes=excluded.notes,
+        follow_up_date=excluded.follow_up_date, updated_at=excluded.updated_at
+    """, (job_id, status, now if status == "applied" else None, notes, follow_up_date, now))
+    conn.commit()
+    conn.close()
 
 
 # --- HEADER ---
 st.title("🎯 MSCM Job Search Dashboard")
 st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2027")
 
+# --- SIDEBAR ---
+st.sidebar.header("Filters")
+search_query = st.sidebar.text_input("🔍 Search (title, company, location)", placeholder="e.g. supply chain manager")
+min_score = st.sidebar.slider("Minimum Score", 0, 100, 60)
+region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
+type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
+date_options = ["All Time", "Last 24 hours", "Last 3 days", "Last 7 days", "Last 30 days"]
+date_filter = st.sidebar.selectbox("Posted", date_options)
+
 # --- LOAD DATA ---
-all_jobs = load_jobs_from_firestore(min_score=50)
+all_jobs = load_jobs(min_score=min_score)
 scored = all_jobs if not all_jobs.empty else pd.DataFrame()
 
 # --- METRICS ---
 if not scored.empty:
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Jobs", len(all_jobs))
-    col2.metric("Scored", len(scored))
-    col3.metric("Score 75+", len(scored[scored["score"] >= 75]))
-    col4.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
-    col5.metric("Unscored", len(all_jobs) - len(scored))
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Showing", len(scored))
+    col2.metric("Score 75+", len(scored[scored["score"] >= 75]))
+    col3.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
+    col4.metric("Avg Salary", f"${scored['salary_min'].dropna().mean()/1000:.0f}K" if scored["salary_min"].notna().any() else "—")
     st.divider()
-
-# --- SIDEBAR ---
-st.sidebar.header("Filters")
-search_query = st.sidebar.text_input("🔍 Search (title, company, location)", placeholder="e.g. supply chain manager")
-min_score = st.sidebar.slider("Minimum Score", 0, 100, 50)
-region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
-type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
-
-# Date filter
-date_options = ["All Time", "Last 24 hours", "Last 3 days", "Last 7 days", "Last 30 days"]
-date_filter = st.sidebar.selectbox("Posted", date_options)
-
-# Location filter for national jobs
-location_options = ["All Locations"]
-if not scored.empty and "location" in scored.columns:
-    national_locations = scored[scored.get("region", pd.Series()) == "national"]["location"].dropna().unique()
-    states = sorted(set(loc.split(",")[1].strip() if "," in loc else "" for loc in national_locations if loc and loc != "nan"))
-    states = [s for s in states if s and s != "US"]
-    location_options += states
-location_filter = st.sidebar.selectbox("Location (National)", location_options)
-
-# --- MAIN TABS ---
-tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
-    "📋 Job Listings", "📊 Application Tracker", "🤝 Referrals",
-    "🎓 Skills Gap", "🛠️ Projects", "📤 Export"
-])
 
 
 def filter_jobs(df):
-    """Apply sidebar filters."""
     if df.empty:
         return df
-    filtered = df[df["score"] >= min_score].copy()
+    filtered = df.copy()
     if "region" not in filtered.columns:
         filtered["region"] = "seattle"
+    else:
+        filtered["region"] = filtered["region"].fillna("seattle")
     if "job_type" not in filtered.columns:
         filtered["job_type"] = "fulltime"
+    else:
+        filtered["job_type"] = filtered["job_type"].fillna("fulltime")
     if region_filter != "All":
         filtered = filtered[filtered["region"] == region_filter]
     if type_filter != "All":
         filtered = filtered[filtered["job_type"] == type_filter]
-    if location_filter != "All Locations" and "location" in filtered.columns:
-        filtered = filtered[filtered["location"].str.contains(location_filter, case=False, na=False)]
     if search_query:
         q = search_query.lower()
         mask = (
-            filtered.get("title", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False) |
-            filtered.get("company", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False) |
-            filtered.get("location", pd.Series(dtype=str)).fillna("").str.lower().str.contains(q, na=False)
+            filtered["title"].fillna("").str.lower().str.contains(q, na=False) |
+            filtered["company"].fillna("").str.lower().str.contains(q, na=False) |
+            filtered["location"].fillna("").str.lower().str.contains(q, na=False)
         )
         filtered = filtered[mask]
-    # Date filter
     if date_filter != "All Time" and "date_posted" in filtered.columns:
-        from datetime import timedelta
         days_map = {"Last 24 hours": 1, "Last 3 days": 3, "Last 7 days": 7, "Last 30 days": 30}
         days = days_map.get(date_filter, 9999)
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -229,16 +136,18 @@ def filter_jobs(df):
     return filtered
 
 
-# ============================================================
-# TAB 1: JOB LISTINGS
-# ============================================================
+# --- TABS ---
+tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
+    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🎓 Skills Gap", "🛠️ Projects", "📤 Export"
+])
+
+# === TAB: JOBS ===
 with tab_jobs:
     if scored.empty:
         st.info("No scored jobs yet. Run `/find-jobs` in Claude Code.")
     else:
         jobs = filter_jobs(scored)
-
-        sub_tabs = st.tabs(["Seattle Full-Time", "Seattle Internships", "National Full-Time", "National Internships", "All"])
+        sub_tabs = st.tabs(["Seattle FT", "Seattle Intern", "National FT", "National Intern", "All"])
 
         def render_table(df, name, key):
             if df.empty:
@@ -246,8 +155,6 @@ with tab_jobs:
                 return
             display = df[["score", "title", "company", "location", "job_url", "salary_min", "salary_max"]].copy().reset_index(drop=False)
             display["score"] = display["score"].astype(int)
-
-            # Scrollable container with compact rows
             with st.container(height=400):
                 for i, row in display.iterrows():
                     col_btn, col_info, col_salary, col_link = st.columns([0.4, 5, 1.5, 1])
@@ -259,8 +166,7 @@ with tab_jobs:
                     with col_info:
                         st.markdown(f"<span style='font-size:0.9em'><b>{row['title']}</b> @ {row['company']} · {row['location']}</span>", unsafe_allow_html=True)
                     with col_salary:
-                        sal_min = row.get("salary_min")
-                        sal_max = row.get("salary_max")
+                        sal_min, sal_max = row.get("salary_min"), row.get("salary_max")
                         if pd.notna(sal_min) and pd.notna(sal_max):
                             st.markdown(f"<span style='font-size:0.85em;color:#059669'>${int(sal_min/1000)}K-${int(sal_max/1000)}K</span>", unsafe_allow_html=True)
                         elif pd.notna(sal_min):
@@ -268,16 +174,6 @@ with tab_jobs:
                     with col_link:
                         if row.get("job_url"):
                             st.markdown(f"<a href='{row['job_url']}' target='_blank' style='font-size:0.85em'>Apply→</a>", unsafe_allow_html=True)
-
-        # Ensure region and job_type columns exist with fillna
-        if "region" not in jobs.columns:
-            jobs["region"] = "seattle"
-        else:
-            jobs["region"] = jobs["region"].fillna("seattle")
-        if "job_type" not in jobs.columns:
-            jobs["job_type"] = "fulltime"
-        else:
-            jobs["job_type"] = jobs["job_type"].fillna("fulltime")
 
         with sub_tabs[0]:
             sea_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
@@ -294,17 +190,17 @@ with tab_jobs:
         with sub_tabs[4]:
             render_table(jobs, "all", "t_all")
 
-        # Job detail panel — driven by table row selection
+        # Job detail panel
         if not jobs.empty:
             st.divider()
             sel_idx = st.session_state.get("selected_job_idx")
             if sel_idx is None or sel_idx not in jobs.index:
                 sel_idx = jobs.index[0]
-
             job = jobs.loc[sel_idx]
+
             st.markdown(f"### 📄 {job['title']}")
             st.markdown(f"**{job['company']}** · {job.get('location', '')} · Score: **{int(job['score'])}/100**")
-            st.caption("👆 Click any row in the table above to view details here")
+
             c1, c2 = st.columns([2, 1])
             with c1:
                 if job.get("job_url"):
@@ -313,7 +209,6 @@ with tab_jobs:
                     with st.expander("Full Description"):
                         st.markdown(str(job["description"])[:3000])
             with c2:
-                st.metric("Score", f"{int(job['score'])}/100")
                 breakdown = {}
                 if job.get("score_breakdown"):
                     try:
@@ -332,60 +227,45 @@ with tab_jobs:
                 tc1, tc2 = st.columns(2)
                 with tc1:
                     if track_st != "—" and st.button("Update Status"):
-                        update_application_firestore(job.get("job_id", ""), track_st)
+                        update_application(job.get("job_id", ""), track_st)
                         st.success(f"Marked as {track_st}!")
                         st.rerun()
                 with tc2:
-                    if st.button("🗑️ Dismiss", help="Remove this job from the list"):
-                        doc_id = job.get("_doc_id") or job.get("job_id", "")
-                        delete_job_firestore(doc_id)
-                        load_jobs_from_firestore.clear()
+                    if st.button("🗑️ Dismiss"):
+                        dismiss_job(job.get("job_id", ""))
                         st.success("Removed!")
                         st.rerun()
 
-            # Quick actions + Referral links for this specific job
+            # Referral links for selected job
             import urllib.parse
-            company = job.get("company", "")
-            title = job.get("title", "")
-            job_url = job.get("job_url", "")
-
+            company = str(job.get("company", "") or "")
+            title = str(job.get("title", "") or "")
             if company:
                 st.markdown("---")
                 st.markdown("#### ⚡ Quick Actions")
-
-                # Row 1: Apply + Connect message
                 act_cols = st.columns([2, 3])
                 with act_cols[0]:
-                    if job_url:
-                        st.link_button("📝 Apply Now", job_url, use_container_width=True)
+                    if job.get("job_url"):
+                        st.link_button("📝 Apply Now", job["job_url"], use_container_width=True)
                 with act_cols[1]:
-                    connect_msg = f"""Hi [Name],
-
-I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!
-
-Best,
-Bhumika"""
+                    connect_msg = f"Hi [Name],\n\nI'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!\n\nBest,\nBhumika"
                     st.code(connect_msg, language=None)
-                    st.caption("👆 Copy → replace [Name] → paste into LinkedIn connection note or DM")
+                    st.caption("Copy → replace [Name] → paste into LinkedIn")
 
-                # Row 2: Referral search links
                 st.markdown("#### 🤝 Find People at " + company)
-                role_kw = title.lower().replace("sr.", "").replace("senior", "").replace("jr.", "").strip()
+                role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
                 ref_cols = st.columns(4)
                 ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
 
-# ============================================================
-# TAB 2: APPLICATION TRACKER
-# ============================================================
+# === TAB: TRACKER ===
 with tab_tracker:
     st.subheader("Application Pipeline")
-    apps = load_applications_from_firestore()
-
+    apps = load_applications()
     if apps.empty:
-        st.info("No applications tracked yet. Go to Job Listings → select a job → set status.")
+        st.info("No applications tracked yet. Select a job → Update Status.")
     else:
         statuses = ["applied", "interviewing", "offer", "rejected", "skipped"]
         status_counts = apps["status"].value_counts() if "status" in apps.columns else pd.Series()
@@ -393,25 +273,19 @@ with tab_tracker:
         emojis = ["📨", "🎤", "🎉", "❌", "⏭️"]
         for col, status, emoji in zip(cols, statuses, emojis):
             col.metric(f"{emoji} {status.title()}", status_counts.get(status, 0))
-
         st.divider()
-        display_cols = [c for c in ["status", "job_id", "notes", "follow_up_date", "applied_date"] if c in apps.columns]
+        display_cols = [c for c in ["status", "title", "company", "score", "applied_date", "notes"] if c in apps.columns]
         st.dataframe(apps[display_cols], hide_index=True, use_container_width=True)
 
-# ============================================================
-# TAB 3: REFERRALS
-# ============================================================
+# === TAB: REFERRALS ===
 with tab_referrals:
     st.subheader("🤝 Find People for Referrals")
-    st.caption("Click a company to get LinkedIn search links for people who can refer you")
-
     if scored.empty:
         st.info("No scored jobs yet.")
     else:
         import urllib.parse
         top_jobs = scored[scored["score"] >= 75].head(20)
         seen_companies = set()
-
         for _, job in top_jobs.iterrows():
             company = str(job.get("company", "") or "")
             if not company or company in seen_companies:
@@ -419,27 +293,20 @@ with tab_referrals:
             seen_companies.add(company)
             title = str(job.get("title", "") or "")
             role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
-
             with st.expander(f"**{company}** — {title} · {job.get('location', '')}"):
                 ref_cols = st.columns(4)
                 ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
-
-                # Pre-composed referral message
-                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would appreciate a referral if you think my background is a fit. I've attached my resume for reference. Thank you!"
+                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!"
                 st.code(msg, language=None)
-                st.caption("Copy → replace [Name] → paste into connection note or DM")
 
-# ============================================================
-# TAB 4: SKILLS GAP
-# ============================================================
+# === TAB: SKILLS GAP ===
 with tab_skills:
     st.subheader("Skills Gap Analysis")
-
     if scored.empty or len(scored) < 5:
-        st.info("Need at least 5 scored jobs. Run /find-jobs first.")
+        st.info("Need at least 5 scored jobs.")
     else:
         descriptions = scored[scored["score"] >= 55]["description"].dropna().tolist()
         skills_check = {
@@ -453,7 +320,6 @@ with tab_skills:
             "Project Management": ["pmp", "agile", "scrum"],
         }
         has_skills = {"SQL", "Six Sigma", "Project Management", "Excel Advanced"}
-
         results = []
         for skill, kws in skills_check.items():
             count = sum(1 for d in descriptions if any(k in d.lower() for k in kws))
@@ -462,9 +328,7 @@ with tab_skills:
         results.sort(key=lambda x: x["pct"], reverse=True)
         st.dataframe(pd.DataFrame(results).drop(columns=["pct"]), hide_index=True, use_container_width=True)
 
-# ============================================================
-# TAB 5: PROJECTS
-# ============================================================
+# === TAB: PROJECTS ===
 with tab_projects:
     st.subheader("Portfolio Projects")
     if PROJECTS_DIR.exists():
@@ -478,19 +342,16 @@ with tab_projects:
     else:
         st.info("No projects yet. Run `/generate-projects`.")
 
-# ============================================================
-# TAB 6: EXPORT
-# ============================================================
+# === TAB: EXPORT ===
 with tab_export:
     st.subheader("Export Data")
     if not scored.empty:
-        csv = scored[["title", "company", "location", "job_url", "score", "job_type", "region"]].to_csv(index=False)
-        st.download_button("📥 Download All Jobs (CSV)", csv, "jobs.csv", "text/csv")
-
-    apps_exp = load_applications_from_firestore()
+        csv = scored[["title", "company", "location", "job_url", "score", "job_type", "region", "salary_min", "salary_max"]].to_csv(index=False)
+        st.download_button("📥 Download Jobs (CSV)", csv, "jobs.csv", "text/csv")
+    apps_exp = load_applications()
     if not apps_exp.empty:
         st.download_button("📥 Download Applications (CSV)", apps_exp.to_csv(index=False), "applications.csv", "text/csv")
 
 # --- FOOTER ---
 st.divider()
-st.caption(f"Data source: Firebase (mscm-5591c) | Last loaded: {datetime.now().strftime('%H:%M')} | Powered by Claude Code")
+st.caption(f"Source: SQLite ({DB_PATH.name}) | Last loaded: {datetime.now().strftime('%H:%M')}")
