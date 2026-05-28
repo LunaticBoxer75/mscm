@@ -101,7 +101,9 @@ if DB_PATH.exists():
     """).fetchall()
     _conn.close()
     company_options += [r[0] for r in top_companies]
-company_filter = st.sidebar.selectbox("Company", company_options)
+company_filter = st.sidebar.multiselect("Company", company_options[1:], default=[], placeholder="Type to search companies...")
+if not company_filter:
+    company_filter = None
 
 # Job title filter
 title_options = ["All Titles"]
@@ -115,7 +117,9 @@ if DB_PATH.exists():
     """).fetchall()
     _conn2.close()
     title_options += [r[0] for r in top_titles]
-title_filter = st.sidebar.selectbox("Job Title", title_options)
+title_filter = st.sidebar.multiselect("Job Title", title_options[1:], default=[], placeholder="Type to search titles...")
+if not title_filter:
+    title_filter = None
 
 # --- LOAD DATA ---
 all_jobs = load_jobs(min_score=min_score)
@@ -160,10 +164,10 @@ def filter_jobs(df):
         days = days_map.get(date_filter, 9999)
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         filtered = filtered[filtered["date_posted"].fillna("") >= cutoff]
-    if company_filter != "All Companies":
-        filtered = filtered[filtered["company"] == company_filter]
-    if title_filter != "All Titles":
-        filtered = filtered[filtered["title"] == title_filter]
+    if company_filter:
+        filtered = filtered[filtered["company"].isin(company_filter)]
+    if title_filter:
+        filtered = filtered[filtered["title"].isin(title_filter)]
     return filtered
 
 
