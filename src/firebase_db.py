@@ -127,9 +127,14 @@ def sync_full_db():
 
     import time
 
-    # Sync all jobs
-    cursor = conn.execute("SELECT * FROM jobs")
+    # Sync only valid, scored jobs
+    cursor = conn.execute("SELECT * FROM jobs WHERE title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != '' AND score IS NOT NULL")
     jobs = [dict(row) for row in cursor.fetchall()]
+    # Sanitize None values before pushing
+    for job in jobs:
+        for key in list(job.keys()):
+            if job[key] is None:
+                job[key] = ""
 
     # Batch in groups of 200 with rate limiting to avoid quota exhaustion
     jobs_ref = db.collection("jobs")

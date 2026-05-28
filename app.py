@@ -40,21 +40,22 @@ def get_firestore_client():
     return firestore.client()
 
 
+@st.cache_data(ttl=300)
 def load_jobs_from_firestore(min_score=None):
-    """Load jobs from Firestore."""
+    """Load scored jobs from Firestore. Cached for 5 min to avoid slow reloads."""
     db = get_firestore_client()
     jobs_ref = db.collection("jobs")
 
-    if min_score and min_score > 0:
-        q = jobs_ref.where("score", ">=", min_score).order_by("score", direction=firestore.Query.DESCENDING)
-    else:
-        q = jobs_ref.order_by("score", direction=firestore.Query.DESCENDING)
+    # Only fetch jobs with score >= threshold (reduces load from 10K+ to relevant subset)
+    effective_min = max(min_score or 50, 50)
+    q = jobs_ref.where("score", ">=", effective_min).order_by("score", direction=firestore.Query.DESCENDING).limit(500)
 
     docs = q.stream()
     jobs = []
     for doc in docs:
         data = doc.to_dict()
-        if data.get("score") is not None:
+        data["_doc_id"] = doc.id
+        if data.get("score") is not None and data.get("title") and data.get("company"):
             jobs.append(data)
     return pd.DataFrame(jobs) if jobs else pd.DataFrame()
 
@@ -101,6 +102,12 @@ def update_contact_status_firestore(doc_id, status, notes=None):
     db.collection("contacts").document(doc_id).set(update, merge=True)
 
 
+def delete_job_firestore(job_id):
+    """Delete a job from Firestore (hide/dismiss)."""
+    db = get_firestore_client()
+    db.collection("jobs").document(job_id).delete()
+
+
 def update_application_firestore(job_id, status, notes=None, follow_up_date=None):
     """Update application status in Firestore."""
     db = get_firestore_client()
@@ -120,8 +127,8 @@ st.title("🎯 MSCM Job Search Dashboard")
 st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2027")
 
 # --- LOAD DATA ---
-all_jobs = load_jobs_from_firestore(min_score=0)
-scored = all_jobs[all_jobs["score"].notna()] if not all_jobs.empty else pd.DataFrame()
+all_jobs = load_jobs_from_firestore(min_score=50)
+scored = all_jobs if not all_jobs.empty else pd.DataFrame()
 
 # --- METRICS ---
 if not scored.empty:
@@ -293,10 +300,19 @@ with tab_jobs:
 
                 st.divider()
                 track_st = st.selectbox("Track:", ["—", "applied", "interviewing", "skipped"], key="trk")
-                if track_st != "—" and st.button("Update Status"):
-                    update_application_firestore(job.get("job_id", ""), track_st)
-                    st.success(f"Marked as {track_st}!")
-                    st.rerun()
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    if track_st != "—" and st.button("Update Status"):
+                        update_application_firestore(job.get("job_id", ""), track_st)
+                        st.success(f"Marked as {track_st}!")
+                        st.rerun()
+                with tc2:
+                    if st.button("🗑️ Dismiss", help="Remove this job from the list"):
+                        doc_id = job.get("_doc_id") or job.get("job_id", "")
+                        delete_job_firestore(doc_id)
+                        load_jobs_from_firestore.clear()
+                        st.success("Removed!")
+                        st.rerun()
 
             # Quick actions + Referral links for this specific job
             import urllib.parse

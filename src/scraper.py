@@ -180,8 +180,15 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
     conn.commit()
     conn.close()
 
-    # Auto-sync new jobs to Firebase
+    # ALWAYS quick-score new jobs immediately — never leave unscored
     if all_new_jobs:
+        try:
+            from .quick_scorer import score_all_unscored
+            score_all_unscored()
+        except Exception:
+            pass
+
+        # Auto-sync to Firebase
         try:
             from .firebase_db import sync_jobs
             sync_jobs(all_new_jobs)
