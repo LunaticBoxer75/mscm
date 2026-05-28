@@ -127,8 +127,8 @@ def sync_full_db():
 
     import time
 
-    # Sync only valid, scored jobs
-    cursor = conn.execute("SELECT * FROM jobs WHERE title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != '' AND score IS NOT NULL")
+    # Sync only valid, scored jobs with score >= 60 (keeps Firestore under quota)
+    cursor = conn.execute("SELECT * FROM jobs WHERE title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != '' AND score IS NOT NULL AND score >= 60")
     jobs = [dict(row) for row in cursor.fetchall()]
     # Sanitize None values before pushing
     for job in jobs:
