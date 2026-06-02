@@ -66,6 +66,9 @@ def update_application(job_id, status, notes=None, follow_up_date=None):
         job_id TEXT PRIMARY KEY, status TEXT, applied_date TEXT,
         notes TEXT, follow_up_date TEXT, updated_at TEXT)""")
     now = datetime.now().isoformat()
+    # Auto-set 7-day follow-up when applying
+    if status == "applied" and not follow_up_date:
+        follow_up_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     conn.execute("""
         INSERT INTO applications (job_id, status, applied_date, notes, follow_up_date, updated_at)
         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO UPDATE SET
@@ -74,6 +77,73 @@ def update_application(job_id, status, notes=None, follow_up_date=None):
     """, (job_id, status, now if status == "applied" else None, notes, follow_up_date, now))
     conn.commit()
     conn.close()
+
+
+def get_application_status(job_id):
+    """Get current application status for a job."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT status FROM applications WHERE job_id = ?", (job_id,)).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        conn.close()
+        return None
+
+
+def get_todays_top_jobs(limit=5):
+    """Composite priority: score × freshness × not-applied."""
+    conn = get_db()
+    df = pd.read_sql_query("""
+        SELECT j.*, a.status as applied_status
+        FROM jobs j
+        LEFT JOIN applications a ON j.job_id = a.job_id
+        WHERE j.score IS NOT NULL AND j.score >= 70
+        AND j.title IS NOT NULL AND j.title != ''
+        AND j.company IS NOT NULL AND j.company != ''
+        AND (j.dismissed IS NULL OR j.dismissed = 0)
+        AND (a.status IS NULL OR a.status = 'new')
+        ORDER BY j.score DESC, j.scraped_at DESC
+        LIMIT ?
+    """, conn, params=(limit,))
+    conn.close()
+    return df
+
+
+def get_comparable_jobs(current_job, limit=3):
+    """Find similar roles to the currently selected job."""
+    conn = get_db()
+    title = str(current_job.get("title", "") or "")
+    job_id = current_job.get("job_id", "")
+
+    # Extract key tokens (skip generic words)
+    skip_words = {"sr.", "sr", "senior", "jr.", "junior", "ii", "iii", "i", "the", "of", "and", "for", "in"}
+    tokens = [t for t in title.lower().split() if t not in skip_words and len(t) > 2][:3]
+
+    if not tokens:
+        return pd.DataFrame()
+
+    # Build LIKE clauses for each token
+    where_clauses = " AND ".join([f"LOWER(title) LIKE ?" for _ in tokens])
+    params = [f"%{t}%" for t in tokens]
+    params.append(job_id)
+    params.append(limit)
+
+    try:
+        df = pd.read_sql_query(f"""
+            SELECT job_id, title, company, location, score, salary_min, salary_max, job_url
+            FROM jobs
+            WHERE {where_clauses}
+            AND job_id != ?
+            AND score >= 60
+            AND (dismissed IS NULL OR dismissed = 0)
+            ORDER BY score DESC
+            LIMIT ?
+        """, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
 
 
 # --- HEADER ---
@@ -86,8 +156,8 @@ search_query = st.sidebar.text_input("🔍 Search (title, company, location)", p
 min_score = st.sidebar.slider("Minimum Score", 0, 100, 60)
 region_filter = st.sidebar.selectbox("Region", ["All", "seattle", "national"])
 type_filter = st.sidebar.selectbox("Job Type", ["All", "fulltime", "internship"])
-date_options = ["All Time", "Last 24 hours", "Last 3 days", "Last 7 days", "Last 30 days"]
-date_filter = st.sidebar.selectbox("Posted", date_options)
+date_options = ["Last 30 days", "Last 7 days", "Last 3 days", "Last 24 hours", "All Time"]
+date_filter = st.sidebar.selectbox("Posted", date_options, index=0)
 
 # Company filter
 company_options = ["All Companies"]
@@ -132,6 +202,23 @@ if not scored.empty:
     col2.metric("Score 75+", len(scored[scored["score"] >= 75]))
     col3.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
     col4.metric("Avg Salary", f"${scored['salary_min'].dropna().mean()/1000:.0f}K" if scored["salary_min"].notna().any() else "—")
+
+    # Today's Top 5 (A4)
+    todays_top = get_todays_top_jobs(5)
+    if not todays_top.empty:
+        st.markdown("### 🔥 Today's Top 5 — Apply to These Now")
+        for _, j in todays_top.iterrows():
+            sal = ""
+            if pd.notna(j.get("salary_min")) and pd.notna(j.get("salary_max")):
+                sal = f" · ${int(j['salary_min']/1000)}K-${int(j['salary_max']/1000)}K"
+            cols = st.columns([0.3, 5, 1.2])
+            with cols[0]:
+                st.markdown(f"**{int(j['score'])}**")
+            with cols[1]:
+                st.markdown(f"**{j['title']}** @ {j['company']} · {j['location']}{sal}")
+            with cols[2]:
+                if j.get("job_url"):
+                    st.link_button("Apply →", j["job_url"], use_container_width=True)
     st.divider()
 
 
@@ -172,8 +259,8 @@ def filter_jobs(df):
 
 
 # --- TABS ---
-tab_jobs, tab_tracker, tab_referrals, tab_skills, tab_projects, tab_export = st.tabs([
-    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🎓 Skills Gap", "🛠️ Projects", "📤 Export"
+tab_jobs, tab_tracker, tab_referrals, tab_sponsors, tab_skills, tab_projects, tab_tools, tab_export = st.tabs([
+    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap", "🛠️ Projects", "⚡ Tools", "📤 Export"
 ])
 
 # === TAB: JOBS ===
@@ -257,8 +344,12 @@ with tab_jobs:
                 sel_idx = jobs.index[0]
             job = jobs.loc[sel_idx]
 
+            from src.sponsor_data import get_sponsor_badge
+            badge_emoji, badge_label, badge_color = get_sponsor_badge(str(job.get("company", "") or ""))
+
             st.markdown(f"### 📄 {job['title']}")
             st.markdown(f"**{job['company']}** · {job.get('location', '')} · Score: **{int(job['score'])}/100**")
+            st.markdown(f"{badge_emoji} **Visa:** {badge_label}")
 
             c1, c2 = st.columns([2, 1])
             with c1:
@@ -299,13 +390,45 @@ with tab_jobs:
             import urllib.parse
             company = str(job.get("company", "") or "")
             title = str(job.get("title", "") or "")
+            job_id_curr = job.get("job_id", "")
+
             if company:
+                # Comparable roles (B5)
+                comparable = get_comparable_jobs(job, limit=3)
+                if not comparable.empty:
+                    st.markdown("---")
+                    st.markdown("#### 🔗 Similar Roles")
+                    for _, c in comparable.iterrows():
+                        sal = ""
+                        if pd.notna(c.get("salary_min")) and pd.notna(c.get("salary_max")):
+                            sal = f" · ${int(c['salary_min']/1000)}K-${int(c['salary_max']/1000)}K"
+                        c_cols = st.columns([0.3, 5, 1])
+                        with c_cols[0]:
+                            st.markdown(f"`{int(c['score'])}`")
+                        with c_cols[1]:
+                            st.markdown(f"**{c['title']}** @ {c['company']} · {c['location']}{sal}")
+                        with c_cols[2]:
+                            if c.get("job_url"):
+                                st.link_button("Apply", c["job_url"], use_container_width=True)
+
                 st.markdown("---")
                 st.markdown("#### ⚡ Quick Actions")
+                applied_status = get_application_status(job_id_curr)
                 act_cols = st.columns([2, 3])
                 with act_cols[0]:
                     if job.get("job_url"):
-                        st.link_button("📝 Apply Now", job["job_url"], use_container_width=True)
+                        # A1: Apply auto-tracks
+                        if applied_status == "applied":
+                            st.success("✓ Applied · Follow-up in 7 days")
+                            st.link_button("📝 Open Posting Again", job["job_url"], use_container_width=True)
+                        else:
+                            if st.button("📝 Apply Now (auto-tracks)", use_container_width=True, type="primary"):
+                                update_application(job_id_curr, "applied")
+                                st.success("Marked applied + 7-day follow-up queued!")
+                                # Use JS to open in new tab
+                                st.markdown(f"<script>window.open('{job['job_url']}', '_blank');</script>", unsafe_allow_html=True)
+                                st.markdown(f"[Open posting →]({job['job_url']})")
+                                st.rerun()
                 with act_cols[1]:
                     connect_msg = f"Hi [Name],\n\nI'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!\n\nBest,\nBhumika"
                     st.code(connect_msg, language=None)
@@ -318,6 +441,60 @@ with tab_jobs:
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", use_container_width=True)
                 ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", use_container_width=True)
+
+                # Resume tailor (B1+B2)
+                desc = job.get("description", "") or ""
+                if desc:
+                    with st.expander("📝 Tailor Resume for This Job", expanded=False):
+                        from src.resume_rephraser import (
+                            keyword_match_analysis, rephrase_all_bullets, generate_tailored_docx
+                        )
+
+                        matched, missing = keyword_match_analysis(desc)
+
+                        # ATS keyword chips
+                        st.markdown("**ATS Keyword Match**")
+                        kc1, kc2 = st.columns(2)
+                        with kc1:
+                            st.markdown("✅ **In your resume:**")
+                            if matched:
+                                st.markdown(" · ".join([f"`{k}`" for k in matched]))
+                            else:
+                                st.caption("None of the JD's key terms found")
+                        with kc2:
+                            st.markdown("❌ **Missing — consider adding:**")
+                            if missing:
+                                st.markdown(" · ".join([f"`{k}`" for k in missing]))
+                            else:
+                                st.caption("Resume covers all key terms")
+
+                        st.markdown("---")
+                        st.markdown("**Suggested Rephrases**")
+                        rephrases = rephrase_all_bullets(desc)
+                        any_changes = False
+                        for r in rephrases:
+                            if r["changed"]:
+                                any_changes = True
+                                st.markdown(f"- ~~{r['original']}~~")
+                                st.markdown(f"  → **{r['rephrased']}**")
+                                if r["changes"]:
+                                    st.caption(f"  Changes: {', '.join(r['changes'])}")
+                        if not any_changes:
+                            st.caption("No automatic rephrases suggested — your bullets already match well.")
+
+                        # Download DOCX
+                        st.markdown("---")
+                        try:
+                            docx_buf = generate_tailored_docx(desc)
+                            if docx_buf:
+                                st.download_button(
+                                    "📥 Download Tailored Resume Bullets (DOCX)",
+                                    data=docx_buf,
+                                    file_name=f"resume-bullets-{company.replace(' ','_')}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                )
+                        except Exception as e:
+                            st.caption(f"DOCX generation unavailable: {e}")
 
 # === TAB: TRACKER ===
 with tab_tracker:
@@ -361,6 +538,37 @@ with tab_referrals:
                 msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!"
                 st.code(msg, language=None)
 
+# === TAB: SPONSORS ===
+with tab_sponsors:
+    st.subheader("🛂 Top H1B / STEM-OPT Sponsors for Supply Chain")
+    st.caption("E-Verify enrolled employers that sponsor F1/H1B for SCM/Operations roles. STEM OPT extension (24 months) requires E-Verify.")
+
+    from src.sponsor_data import get_top_sponsors_for_scm
+
+    top_sponsors = get_top_sponsors_for_scm()
+    volume_emoji = {"very_high": "🟢", "high": "🟢", "medium": "🟡", "low": "🟡"}
+
+    st.markdown(f"**{len(top_sponsors)} target companies** — apply directly at their careers pages, even if not in our scrape:")
+    st.markdown("")
+
+    # 3-column layout
+    cols = st.columns(3)
+    for i, sponsor in enumerate(top_sponsors):
+        with cols[i % 3]:
+            emoji = volume_emoji.get(sponsor["h1b_volume"], "⚪")
+            careers_url = f"https://www.google.com/search?q={sponsor['company'].replace(' ', '+')}+careers+supply+chain"
+            st.markdown(f"{emoji} **[{sponsor['company']}]({careers_url})**")
+            st.caption(f"H1B volume: {sponsor['h1b_volume'].replace('_',' ')}")
+
+    st.divider()
+    st.info("""
+    **Why this matters for STEM OPT:** Bhumika's MSCM is STEM-designated, giving her 36 months of OPT.
+    But the 24-month extension REQUIRES the employer to be E-Verify enrolled. Companies on this list are
+    confirmed E-Verify and have a history of sponsoring H1B for SCM/Ops roles.
+
+    **Strategy:** Apply directly at these companies' careers pages, not just from job board scrapes.
+    """)
+
 # === TAB: SKILLS GAP ===
 with tab_skills:
     st.subheader("Skills Gap Analysis")
@@ -400,6 +608,41 @@ with tab_projects:
                     st.download_button("Download Guide", content, f"{pdir.name}.md", "text/markdown", key=f"dl_{pdir.name}")
     else:
         st.info("No projects yet. Run `/generate-projects`.")
+
+# === TAB: TOOLS ===
+with tab_tools:
+    st.subheader("⚡ Application Tools")
+
+    st.markdown("### 📌 ATS Auto-Fill Bookmarklet")
+    st.markdown("""
+    A one-click form filler for Workday, Greenhouse, Lever, iCIMS, and similar ATS systems.
+    Saves 5-10 minutes per application.
+
+    **How to install (one-time setup):**
+    1. Make sure your bookmarks bar is visible (`Cmd+Shift+B` or `Ctrl+Shift+B`)
+    2. Click and **drag the link below** to your bookmarks bar
+    3. Done!
+
+    **How to use:**
+    1. Open any job application form (Workday, Greenhouse, etc.)
+    2. Click the bookmark in your bookmarks bar
+    3. Common fields auto-fill (name, email, phone, LinkedIn, visa status, salary, start date)
+    4. Review and complete any custom questions, then submit
+    """)
+
+    from src.bookmarklet import generate_bookmarklet_js, get_profile_data
+    encoded, raw_js = generate_bookmarklet_js()
+
+    st.markdown(f'<a href="{encoded}" style="display:inline-block; padding:10px 20px; background:#1a73e8; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">📌 MSCM Auto-Fill (drag to bookmarks)</a>', unsafe_allow_html=True)
+    st.caption("👆 Drag this button to your bookmarks bar — clicking here won't do anything useful")
+
+    with st.expander("What data will it fill in?"):
+        data = get_profile_data()
+        st.json(data)
+        st.caption("Edit these in `config/profile.json`")
+
+    with st.expander("View the JavaScript code"):
+        st.code(raw_js, language="javascript")
 
 # === TAB: EXPORT ===
 with tab_export:
