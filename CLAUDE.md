@@ -138,7 +138,7 @@ This ensures: every job gets scored (no invisible unscored entries), irrelevant 
 - Resume PDF at: `/Users/aniketsw/Downloads/Bhumika_Choudhary_Resume.pdf`
 - Bhumika's LinkedIn: `bhummika`
 - Program is STEM-designated (3-year OPT eligibility)
-- Program starts ~September 2026
+- Program: June 2026 — May/June 2027 (1-year, STEM-designated)
 - Scoring uses Claude Sonnet via Bedrock (us-west-2, model: us.anthropic.claude-sonnet-4-20250514-v1:0)
 - AWS auth: uses default credential chain (ada / SSO)
 - Firebase project: `mscm-5591c`

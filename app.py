@@ -78,7 +78,7 @@ def update_application(job_id, status, notes=None, follow_up_date=None):
 
 # --- HEADER ---
 st.title("🎯 MSCM Job Search Dashboard")
-st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM 2026-2027")
+st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM (Jun 2026 – May 2027)")
 
 # --- SIDEBAR ---
 st.sidebar.header("Filters")
