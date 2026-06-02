@@ -25,6 +25,10 @@ HIGH_RELEVANCE_TITLES = [
     'supply chain manager', 'commodity manager', 'category manager',
     'supply chain', 'procurement',
     'program manager', 'technical program manager',
+    # Internship variants
+    'supply chain intern', 'procurement intern', 'operations intern',
+    'logistics intern', 'sourcing intern', 'demand planning intern',
+    'supply chain co-op', 'operations co-op',
 ]
 MEDIUM_RELEVANCE_TITLES = [
     'project manager', 'business analyst',

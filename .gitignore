@@ -6,3 +6,6 @@ __pycache__/
 config/firebase-credentials.json
 .streamlit/secrets.toml
 data/jobs.db
+data/jobs_corrupt*.db
+data/jobs.db.bak
+data/jobs_new.db

@@ -140,8 +140,19 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                             continue
 
                         # Override job_type if title clearly indicates intern/co-op
+                        # Use word boundaries: " intern" or "internship" but NOT "internal"
                         effective_type = jtype
-                        if any(kw in title_str.lower() for kw in ["intern", "co-op", "coop", "new grad"]):
+                        title_lower = title_str.lower()
+                        is_intern = (
+                            "internship" in title_lower
+                            or " intern " in title_lower
+                            or title_lower.endswith(" intern")
+                            or title_lower.startswith("intern,")
+                            or "co-op" in title_lower
+                            or "coop" in title_lower
+                            or "new grad" in title_lower
+                        )
+                        if is_intern:
                             effective_type = "internship"
 
                         job_data = {
