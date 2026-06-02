@@ -414,22 +414,19 @@ with tab_jobs:
                 st.markdown("---")
                 st.markdown("#### ⚡ Quick Actions")
                 applied_status = get_application_status(job_id_curr)
-                act_cols = st.columns([2, 3])
+                act_cols = st.columns([1.5, 1.5, 3])
                 with act_cols[0]:
                     if job.get("job_url"):
-                        # A1: Apply auto-tracks
-                        if applied_status == "applied":
-                            st.success("✓ Applied · Follow-up in 7 days")
-                            st.link_button("📝 Open Posting Again", job["job_url"], use_container_width=True)
-                        else:
-                            if st.button("📝 Apply Now (auto-tracks)", use_container_width=True, type="primary"):
-                                update_application(job_id_curr, "applied")
-                                st.success("Marked applied + 7-day follow-up queued!")
-                                # Use JS to open in new tab
-                                st.markdown(f"<script>window.open('{job['job_url']}', '_blank');</script>", unsafe_allow_html=True)
-                                st.markdown(f"[Open posting →]({job['job_url']})")
-                                st.rerun()
+                        st.link_button("📝 Open Posting", job["job_url"], use_container_width=True)
                 with act_cols[1]:
+                    if applied_status == "applied":
+                        st.success("✓ Applied")
+                    else:
+                        if st.button("✅ Mark Applied", use_container_width=True, help="Marks applied + queues 7-day follow-up"):
+                            update_application(job_id_curr, "applied")
+                            st.success("Marked applied + 7-day follow-up queued!")
+                            st.rerun()
+                with act_cols[2]:
                     connect_msg = f"Hi [Name],\n\nI'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!\n\nBest,\nBhumika"
                     st.code(connect_msg, language=None)
                     st.caption("Copy → replace [Name] → paste into LinkedIn")
