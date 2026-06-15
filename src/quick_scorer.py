@@ -25,15 +25,27 @@ HIGH_RELEVANCE_TITLES = [
     'supply chain manager', 'commodity manager', 'category manager',
     'supply chain', 'procurement',
     'program manager', 'technical program manager',
+    # Risk / Compliance / Operations (Bhumika's direct background at Uber)
+    'risk analyst', 'risk manager', 'risk and compliance',
+    'compliance analyst', 'compliance manager', 'compliance specialist',
+    'operations manager', 'operations specialist', 'operations coordinator',
+    'business operations', 'global operations',
+    'fraud analyst', 'fraud investigator', 'fraud risk',
+    'trust and safety', 'trust & safety',
+    'audit analyst', 'internal audit',
+    'process improvement analyst', 'process improvement manager',
+    'quality analyst', 'quality manager', 'quality assurance analyst',
     # Internship variants
     'supply chain intern', 'procurement intern', 'operations intern',
     'logistics intern', 'sourcing intern', 'demand planning intern',
-    'supply chain co-op', 'operations co-op',
+    'risk intern', 'compliance intern', 'audit intern',
+    'supply chain co-op', 'operations co-op', 'risk co-op',
 ]
 MEDIUM_RELEVANCE_TITLES = [
     'project manager', 'business analyst',
     'data analyst', 'process improvement', 'operations',
     'logistics', 'planner', 'analyst',
+    'risk', 'compliance', 'audit', 'fraud',
 ]
 IRRELEVANT_TITLES = [
     'nurse', 'nursing', 'pharmacy', 'pharmacist', 'physician', 'therapist',

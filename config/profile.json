@@ -61,14 +61,22 @@
       "Logistics Analyst",
       "Supply Chain Operations Manager",
       "Program Manager",
-      "Technical Program Manager"
+      "Technical Program Manager",
+      "Risk Analyst",
+      "Risk and Compliance Analyst",
+      "Compliance Analyst",
+      "Operations Manager",
+      "Operations Specialist",
+      "Business Operations Analyst",
+      "Trust and Safety Analyst",
+      "Fraud Analyst",
+      "Process Improvement Analyst"
     ],
     "secondary": [
       "Process Improvement Manager",
-      "Operations Manager",
-      "Business Operations Analyst",
-      "Compliance Analyst",
-      "Risk Analyst"
+      "Audit Analyst",
+      "Quality Analyst",
+      "Quality Assurance Analyst"
     ],
     "stretch": [
       "Supply Chain Manager",
