@@ -259,8 +259,10 @@ def filter_jobs(df):
 
 
 # --- TABS ---
-tab_jobs, tab_tracker, tab_referrals, tab_sponsors, tab_skills, tab_projects, tab_tools, tab_export = st.tabs([
-    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap", "🛠️ Projects", "⚡ Tools", "📤 Export"
+(tab_jobs, tab_tracker, tab_referrals, tab_sponsors, tab_skills,
+ tab_insights, tab_fellowships, tab_projects, tab_tools, tab_export) = st.tabs([
+    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap",
+    "📈 Skills Insights", "🏆 Fellowships", "🛠️ Projects", "⚡ Tools", "📤 Export"
 ])
 
 # === TAB: JOBS ===
@@ -591,6 +593,94 @@ with tab_skills:
             results.append({"Skill": skill, "Requested In": f"{pct}%", "Has It": "✅" if skill in has_skills else "❌ GAP", "pct": pct})
         results.sort(key=lambda x: x["pct"], reverse=True)
         st.dataframe(pd.DataFrame(results).drop(columns=["pct"]), hide_index=True, use_container_width=True)
+
+# === TAB: SKILLS INSIGHTS ===
+with tab_insights:
+    st.subheader("📈 Skills & Certifications Demand")
+    st.caption("What employers ask for across all relevant job descriptions (score 60+). ✅ = Bhumika already has it, ❌ = gap to build.")
+
+    from src.skills_insights import analyze_skills
+
+    @st.cache_data(ttl=600)
+    def _cached_skills():
+        return analyze_skills(min_score=60)
+
+    insights = _cached_skills()
+    if insights["total"] == 0:
+        st.info("No scored jobs to analyze yet.")
+    else:
+        st.markdown(f"_Analyzed **{insights['total']:,}** job descriptions_")
+
+        def render_skill_table(items, title):
+            st.markdown(f"#### {title}")
+            df = pd.DataFrame([{
+                "Skill": r["skill"],
+                "Demand": f"{r['pct']}%",
+                "Status": "✅ Have" if r.get("has") else "❌ Gap",
+                "_pct": r["pct"],
+            } for r in items[:12]])
+            st.dataframe(
+                df.drop(columns=["_pct"]),
+                hide_index=True, use_container_width=True,
+                column_config={"Demand": st.column_config.TextColumn(width="small")},
+            )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            render_skill_table(insights["technical"], "🔧 Top Technical Skills")
+        with c2:
+            render_skill_table(insights["soft"], "🤝 Top Management / Soft Skills")
+
+        render_skill_table(insights["certs"], "📜 Certifications Mentioned")
+
+        # Highlight top gaps
+        tech_gaps = [r for r in insights["technical"] if not r.get("has") and r["pct"] >= 8][:4]
+        if tech_gaps:
+            st.divider()
+            st.markdown("#### 🎯 Highest-ROI Skill Gaps to Close")
+            for g in tech_gaps:
+                st.markdown(f"- **{g['skill']}** — requested in {g['pct']}% of relevant jobs")
+
+# === TAB: FELLOWSHIPS ===
+with tab_fellowships:
+    st.subheader("🏆 Fellowships, Competitions & Programs")
+    st.caption("Curated SCM/Operations opportunities for an F1 MSCM student. Verify live dates each fall — most LDPs recruit Aug-Nov for next year.")
+
+    import json as _json
+    opp_path = Path(__file__).parent / "config" / "opportunities.json"
+    if opp_path.exists():
+        opps = _json.loads(opp_path.read_text())
+
+        section_meta = [
+            ("case_competitions", "🎓 Case Competitions"),
+            ("hackathons_datathons", "💻 Hackathons & Datathons"),
+            ("rotational_ldps", "🔄 Rotational / Leadership Development Programs"),
+            ("fellowships", "🎖️ Fellowships & Scholarships"),
+            ("associations", "🤝 Professional Associations"),
+        ]
+
+        for key, title in section_meta:
+            items = opps.get(key, [])
+            if not items:
+                continue
+            st.markdown(f"### {title}")
+            for o in items:
+                f1 = o.get("f1_ok")
+                flag = "🟢" if f1 else "🟡"
+                tier = f" · _{o['tier']}_" if o.get("tier") else ""
+                with st.expander(f"{flag} **{o['name']}** — {o['org']}{tier}"):
+                    st.markdown(f"**Timeline:** {o.get('timeline','—')}")
+                    st.markdown(f"**Eligibility:** {o.get('eligibility','—')}")
+                    st.markdown(f"**About:** {o.get('desc','')}")
+                    if o.get("url"):
+                        st.markdown(f"[Official page →]({o['url']})")
+            st.markdown("")
+
+        st.divider()
+        st.info("🟢 = F1-friendly / no visa barrier · 🟡 = verify sponsorship per posting. "
+                "**Tip:** Frame applications around STEM-OPT eligibility (3-yr work authorization, no employer petition) to bypass many 'no sponsorship' filters.")
+    else:
+        st.info("Opportunities data not found.")
 
 # === TAB: PROJECTS ===
 with tab_projects:

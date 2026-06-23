@@ -111,6 +111,38 @@
     {
       "search_term": "S&OP analyst",
       "category": "stretch"
+    },
+    {
+      "search_term": "supply chain leadership development program",
+      "category": "primary"
+    },
+    {
+      "search_term": "operations leadership development program",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain rotational program",
+      "category": "primary"
+    },
+    {
+      "search_term": "operations rotational program new grad",
+      "category": "primary"
+    },
+    {
+      "search_term": "supply chain fellowship",
+      "category": "primary"
+    },
+    {
+      "search_term": "risk compliance analyst",
+      "category": "primary"
+    },
+    {
+      "search_term": "operations management trainee",
+      "category": "secondary"
+    },
+    {
+      "search_term": "supply chain MBA leadership program",
+      "category": "secondary"
     }
   ],
   "google_search_templates": [
