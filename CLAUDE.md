@@ -2,6 +2,8 @@
 
 Daily automated job search for **Bhumika Choudhary** — incoming UW Foster Master of Supply Chain Management (MSCM) student, currently Global SME at Uber Risk & Compliance.
 
+> **Career plan:** A full Jul–Dec 2026 upskilling + job-search plan lives in [`career-plan/`](career-plan/) — start at [`career-plan/INDEX.md`](career-plan/INDEX.md). It's a browsable binder (strategy, skills, 10 portfolio projects, networking templates, reading list, consulting fit-test, edge track) plus 24 printable weekly pages (`career-plan/weekly/`). Skill ordering there is evidence-based (from analyzing this repo's scraped JDs) and supersedes the older 90-Day PM Track doc.
+
 ## Quick Start
 
 ```bash
