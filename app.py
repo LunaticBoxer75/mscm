@@ -259,10 +259,12 @@ def filter_jobs(df):
 
 
 # --- TABS ---
-(tab_jobs, tab_tracker, tab_networking, tab_referrals, tab_sponsors, tab_skills,
- tab_insights, tab_fellowships, tab_projects, tab_tools, tab_export) = st.tabs([
-    "📋 Jobs", "📊 Tracker", "☕ Networking", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap",
-    "📈 Skills Insights", "🏆 Fellowships", "🛠️ Projects", "⚡ Tools", "📤 Export"
+(tab_jobs, tab_tracker, tab_todos, tab_networking, tab_interview, tab_referrals,
+ tab_sponsors, tab_skills, tab_insights, tab_fellowships, tab_projects,
+ tab_tools, tab_export) = st.tabs([
+    "📋 Jobs", "📊 Tracker", "✅ To-Dos", "☕ Networking", "🎤 Interview Prep",
+    "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap", "📈 Skills Insights",
+    "🏆 Fellowships", "🛠️ Projects", "⚡ Tools", "📤 Export"
 ])
 
 # === TAB: JOBS ===
@@ -695,6 +697,173 @@ with tab_projects:
                     st.download_button("Download Guide", content, f"{pdir.name}.md", "text/markdown", key=f"dl_{pdir.name}")
     else:
         st.info("No projects yet. Run `/generate-projects`.")
+
+# === TAB: TO-DOS ===
+with tab_todos:
+    st.subheader("✅ To-Dos & Action Items")
+    st.caption("Auto-imports action items from coffee chats. Add your own too.")
+
+    from src.todos import get_todos, add_todo, set_status, import_coffee_chat_actions, seed_defaults
+
+    # Sync latest coffee chat actions
+    import_coffee_chat_actions()
+
+    todos = get_todos()
+    open_todos = [t for t in todos if t["status"] == "open"]
+    done_todos = [t for t in todos if t["status"] == "done"]
+
+    c1, c2 = st.columns(2)
+    c1.metric("Open", len(open_todos))
+    c2.metric("Done", len(done_todos))
+
+    st.markdown("### 📌 Open")
+    if not open_todos:
+        st.success("All caught up!")
+    else:
+        # Group by category
+        cats = {}
+        for t in open_todos:
+            cats.setdefault(t.get("category", "general"), []).append(t)
+        for cat, items in sorted(cats.items()):
+            st.markdown(f"**{cat.replace('-', ' ').title()}**")
+            for t in items:
+                cols = st.columns([0.5, 6, 1.2])
+                with cols[0]:
+                    if st.button("✓", key=f"done_{t['id']}", help="Mark done"):
+                        set_status(t["id"], "done")
+                        st.rerun()
+                with cols[1]:
+                    pri = t.get("priority", "medium")
+                    pri_emoji = "🔴" if pri == "high" else "🟡" if pri == "medium" else "⚪"
+                    st.markdown(f"{pri_emoji} {t['item']}")
+                    if t.get("source") and t["source"] != "manual":
+                        st.caption(f"from {t['source']}")
+
+    if done_todos:
+        with st.expander(f"✅ Completed ({len(done_todos)})"):
+            for t in done_todos:
+                dc = st.columns([6, 1])
+                dc[0].markdown(f"~~{t['item']}~~")
+                if dc[1].button("↩", key=f"reopen_{t['id']}", help="Reopen"):
+                    set_status(t["id"], "open")
+                    st.rerun()
+
+    st.divider()
+    st.markdown("### ➕ Add To-Do")
+    with st.form("add_todo_form"):
+        new_item = st.text_input("Task")
+        tc1, tc2 = st.columns(2)
+        new_cat = tc1.text_input("Category", value="general")
+        new_pri = tc2.selectbox("Priority", ["high", "medium", "low"], index=1)
+        if st.form_submit_button("Add") and new_item:
+            add_todo(new_item, category=new_cat, priority=new_pri)
+            st.success("Added!")
+            st.rerun()
+
+# === TAB: INTERVIEW PREP ===
+with tab_interview:
+    st.subheader("🎤 Interview Prep")
+
+    from src.interview_prep import (
+        get_recommendations, seed_shivam_recommendations,
+        get_stories, add_story, delete_story, STORY_THEMES,
+        generate_mock_interview, get_interview_experience_sources,
+    )
+    seed_shivam_recommendations()
+
+    iv_sub = st.tabs(["💡 Recommendations", "⭐ STAR Stories", "🎯 Mock Interview", "📚 Interview Experiences"])
+
+    # --- Recommendations by person, categorized ---
+    with iv_sub[0]:
+        st.caption("Advice from mentors & coffee chats, grouped by theme.")
+        recs = get_recommendations()
+        if not recs:
+            st.info("No recommendations yet — they'll appear as you log coffee chats.")
+        else:
+            by_cat = {}
+            for r in recs:
+                by_cat.setdefault(r["category"], []).append(r)
+            for cat, items in by_cat.items():
+                st.markdown(f"#### {cat}")
+                for r in items:
+                    st.markdown(f"- {r['recommendation']}")
+                    st.caption(f"— {r['recommended_by']}" + (f", {r['person_role']}" if r.get('person_role') else ""))
+
+    # --- STAR Stories ---
+    with iv_sub[1]:
+        st.caption("Build stories in STAR format, categorized by behavioral theme. Export anytime.")
+        stories = get_stories()
+
+        if stories:
+            by_theme = {}
+            for s in stories:
+                by_theme.setdefault(s["theme"], []).append(s)
+            for theme, items in by_theme.items():
+                st.markdown(f"#### {theme} ({len(items)})")
+                for s in items:
+                    with st.expander(s["title"]):
+                        st.markdown(f"**Situation:** {s['situation']}")
+                        st.markdown(f"**Task:** {s['task']}")
+                        st.markdown(f"**Action:** {s['action']}")
+                        st.markdown(f"**Result:** {s['result']}")
+                        if s.get("tags"):
+                            st.caption(f"Tags: {s['tags']}")
+                        if st.button("Delete", key=f"del_story_{s['id']}"):
+                            delete_story(s["id"])
+                            st.rerun()
+
+            # Export all stories as CSV
+            import io, csv
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["Theme", "Title", "Situation", "Task", "Action", "Result", "Tags"])
+            for s in stories:
+                w.writerow([s["theme"], s["title"], s["situation"], s["task"], s["action"], s["result"], s.get("tags", "")])
+            st.download_button("📥 Export All Stories (CSV → open in Excel)", buf.getvalue(), "star_stories.csv", "text/csv")
+        else:
+            st.info("No stories yet. Add your first below.")
+
+        st.divider()
+        st.markdown("### ➕ Add STAR Story")
+        with st.form("add_story_form"):
+            s_title = st.text_input("Story title (short label)")
+            s_theme = st.selectbox("Behavioral theme", STORY_THEMES)
+            s_sit = st.text_area("Situation")
+            s_task = st.text_area("Task")
+            s_action = st.text_area("Action")
+            s_result = st.text_area("Result (with metrics if possible)")
+            s_tags = st.text_input("Tags (optional, comma-separated)")
+            if st.form_submit_button("Save Story") and s_title:
+                add_story(s_title, s_theme, s_sit, s_task, s_action, s_result, s_tags)
+                st.success("Saved!")
+                st.rerun()
+
+    # --- Mock Interview ---
+    with iv_sub[2]:
+        st.caption("Generate a fresh 5-question mock interview. Practice out loud or write answers.")
+        if "mock_questions" not in st.session_state:
+            st.session_state["mock_questions"] = generate_mock_interview(5)
+        if st.button("🎲 Generate New Mock Interview (5 questions)"):
+            st.session_state["mock_questions"] = generate_mock_interview(5)
+            st.rerun()
+        st.markdown("---")
+        for i, q in enumerate(st.session_state["mock_questions"], 1):
+            st.markdown(f"**Q{i}. [{q['category']}]**")
+            st.markdown(f"> {q['question']}")
+            st.text_area(f"Your answer (Q{i})", key=f"mock_ans_{i}", height=80, label_visibility="collapsed")
+            st.markdown("")
+
+    # --- Interview Experiences ---
+    with iv_sub[3]:
+        st.caption("Concrete, sourced places to find real interview experiences for SCM/Ops/PM/management roles.")
+        ie_c1, ie_c2 = st.columns(2)
+        ie_company = ie_c1.text_input("Company (optional)", placeholder="e.g. Amazon")
+        ie_role = ie_c2.text_input("Role (optional)", value="supply chain")
+        sources = get_interview_experience_sources(ie_company, ie_role)
+        for s in sources:
+            st.markdown(f"**[{s['name']}]({s.get('search_url', s['url'])})**")
+            st.caption(s["desc"])
+        st.info("These are curated resource sites (not scraped) — click through to read real, sourced interview debriefs. Glassdoor and Blind have the best coverage for non-software management roles.")
 
 # === TAB: NETWORKING ===
 with tab_networking:

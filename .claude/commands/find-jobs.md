@@ -45,42 +45,9 @@ Run the full pipeline: scrape → score → report → deploy dashboard.
    - **Rest of USA — Full-Time**
    - **Rest of USA — Internships**
 
-4. Export deploy DB and push to GitHub (updates live dashboard):
+4. Export deploy DB (trims jobs to FT 70+/intern 55+, copies all tracker tables — applications, coffee_chats, todos, interview_recs, star_stories):
    ```
-   cd /Users/aniketsw/workspaces/mscm && python -c "
-   import sqlite3, os
-   src_conn = sqlite3.connect('data/jobs.db')
-   dst_conn = sqlite3.connect('data/jobs_deploy.db')
-   dst_conn.execute('DROP TABLE IF EXISTS jobs')
-   dst_conn.execute('''CREATE TABLE jobs (
-       job_id TEXT PRIMARY KEY, title TEXT, company TEXT, location TEXT,
-       job_url TEXT, description TEXT, job_type TEXT, date_posted TEXT,
-       salary_min REAL, salary_max REAL, salary_currency TEXT, source TEXT,
-       search_term TEXT, search_category TEXT, scraped_at TEXT, score REAL,
-       score_breakdown TEXT, scored_at TEXT, is_remote INTEGER DEFAULT 0,
-       notified INTEGER DEFAULT 0, region TEXT DEFAULT 'seattle', dismissed INTEGER DEFAULT 0)''')
-   rows = src_conn.execute('''
-       SELECT job_id, title, company, location, job_url,
-              SUBSTR(description, 1, 1000), job_type, date_posted,
-              salary_min, salary_max, salary_currency, source, search_term,
-              search_category, scraped_at, score, score_breakdown, scored_at,
-              is_remote, notified, region, dismissed
-       FROM jobs WHERE score >= 60 AND (dismissed IS NULL OR dismissed = 0)
-       AND title IS NOT NULL AND title != \"\" AND company IS NOT NULL AND company != \"\"
-   ''').fetchall()
-   dst_conn.executemany('INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', rows)
-   try:
-       dst_conn.execute('DROP TABLE IF EXISTS applications')
-       dst_conn.execute('''CREATE TABLE applications (job_id TEXT PRIMARY KEY, status TEXT, applied_date TEXT, notes TEXT, follow_up_date TEXT, updated_at TEXT)''')
-       apps = src_conn.execute('SELECT * FROM applications').fetchall()
-       if apps:
-           dst_conn.executemany('INSERT OR REPLACE INTO applications VALUES (?,?,?,?,?,?)', apps)
-   except: pass
-   dst_conn.commit()
-   dst_conn.close()
-   src_conn.close()
-   print(f'Exported {len(rows)} jobs ({os.path.getsize(\"data/jobs_deploy.db\")/1024/1024:.1f}MB)')
-   "
+   cd /Users/aniketsw/workspaces/mscm && python scripts/export_deploy_db.py
    ```
 
 5. Push to GitHub (auto-deploys Streamlit Cloud):
