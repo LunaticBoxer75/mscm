@@ -259,9 +259,9 @@ def filter_jobs(df):
 
 
 # --- TABS ---
-(tab_jobs, tab_tracker, tab_referrals, tab_sponsors, tab_skills,
+(tab_jobs, tab_tracker, tab_networking, tab_referrals, tab_sponsors, tab_skills,
  tab_insights, tab_fellowships, tab_projects, tab_tools, tab_export) = st.tabs([
-    "📋 Jobs", "📊 Tracker", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap",
+    "📋 Jobs", "📊 Tracker", "☕ Networking", "🤝 Referrals", "🛂 Sponsors", "🎓 Skills Gap",
     "📈 Skills Insights", "🏆 Fellowships", "🛠️ Projects", "⚡ Tools", "📤 Export"
 ])
 
@@ -695,6 +695,70 @@ with tab_projects:
                     st.download_button("Download Guide", content, f"{pdir.name}.md", "text/markdown", key=f"dl_{pdir.name}")
     else:
         st.info("No projects yet. Run `/generate-projects`.")
+
+# === TAB: NETWORKING ===
+with tab_networking:
+    st.subheader("☕ Coffee Chats & Networking Log")
+    st.caption("Log conversations, capture takeaways, and track action items from every chat.")
+
+    from src.networking import get_all_chats, get_all_action_items, log_chat
+
+    chats = get_all_chats()
+
+    # Action items rollup across all chats
+    action_items = get_all_action_items()
+    if action_items:
+        with st.expander(f"✅ All Action Items ({len(action_items)})", expanded=True):
+            for ai in action_items:
+                st.markdown(f"- {ai['item']}  \n  <span style='font-size:0.8em;color:#888'>from {ai['from']} · {ai['date']}</span>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # Show logged chats
+    if not chats:
+        st.info("No coffee chats logged yet. Add your first one below.")
+    else:
+        st.markdown(f"### 📇 {len(chats)} Chats Logged")
+        for chat in chats:
+            with st.expander(f"**{chat['person_name']}** — {chat['person_role']} @ {chat['person_company']} · {chat['chat_date']}"):
+                if chat.get("linkedin_url"):
+                    st.markdown(f"[LinkedIn]({chat['linkedin_url']})")
+                if chat.get("how_connected"):
+                    st.caption(f"How connected: {chat['how_connected']}")
+                if chat.get("summary"):
+                    st.markdown("**Summary**")
+                    st.markdown(chat["summary"])
+                if chat.get("key_takeaways"):
+                    st.markdown("**Key Takeaways**")
+                    st.markdown(chat["key_takeaways"])
+                if chat.get("action_items"):
+                    st.markdown("**Action Items**")
+                    st.markdown(chat["action_items"])
+                if chat.get("follow_up_date"):
+                    st.info(f"Follow up by: {chat['follow_up_date']}")
+
+    # Add new chat form
+    st.divider()
+    st.markdown("### ➕ Log a New Coffee Chat")
+    with st.form("add_chat_form"):
+        fc1, fc2 = st.columns(2)
+        person_name = fc1.text_input("Name")
+        person_role = fc2.text_input("Role")
+        fc3, fc4 = st.columns(2)
+        person_company = fc3.text_input("Company")
+        linkedin_url = fc4.text_input("LinkedIn URL (optional)")
+        chat_date = st.text_input("Date (YYYY-MM-DD)", value=datetime.now().strftime("%Y-%m-%d"))
+        how_connected = st.text_input("How did you connect? (optional)")
+        summary = st.text_area("Summary of conversation")
+        key_takeaways = st.text_area("Key takeaways (one per line)")
+        action_items = st.text_area("Action items (one per line)")
+        follow_up_date = st.text_input("Follow-up date (optional)")
+        submitted = st.form_submit_button("Save Chat")
+        if submitted and person_name:
+            log_chat(person_name, person_role, person_company, chat_date, linkedin_url,
+                     how_connected, summary, key_takeaways, action_items, follow_up_date)
+            st.success(f"Logged chat with {person_name}!")
+            st.rerun()
 
 # === TAB: TOOLS ===
 with tab_tools:
