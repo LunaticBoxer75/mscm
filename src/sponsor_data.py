@@ -115,8 +115,71 @@ def lookup_sponsor(company_name):
     return None
 
 
+import json as _json
+from pathlib import Path as _Path
+
+_VERIFIED_CACHE = None
+
+
+def _load_verified():
+    """Load USCIS-verified H1B sponsor data if available."""
+    global _VERIFIED_CACHE
+    if _VERIFIED_CACHE is not None:
+        return _VERIFIED_CACHE
+    path = _Path(__file__).parent.parent / "config" / "h1b_sponsors_verified.json"
+    if path.exists():
+        try:
+            _VERIFIED_CACHE = _json.loads(path.read_text())
+        except Exception:
+            _VERIFIED_CACHE = {"sponsors": {}}
+    else:
+        _VERIFIED_CACHE = {"sponsors": {}}
+    return _VERIFIED_CACHE
+
+
+def lookup_verified_sponsor(company_name):
+    """Look up actual USCIS H1B approval count for a company (fuzzy match)."""
+    if not company_name:
+        return None
+    data = _load_verified()
+    sponsors = data.get("sponsors", {})
+    norm = company_name.upper().strip()
+
+    # Direct match
+    if norm in sponsors:
+        return {**sponsors[norm], "fiscal_year": data.get("fiscal_year")}
+
+    # Fuzzy: match on significant token overlap
+    company_tokens = set(w for w in norm.replace(",", " ").replace(".", " ").split() if len(w) > 2)
+    if not company_tokens:
+        return None
+    best = None
+    for key, val in sponsors.items():
+        key_tokens = set(w for w in key.replace(",", " ").replace(".", " ").split() if len(w) > 2)
+        # Require the company's first significant word to be in the key
+        first_word = norm.split()[0] if norm.split() else ""
+        if first_word and len(first_word) > 2 and first_word in key:
+            if best is None or val["h1b_approvals"] > best["h1b_approvals"]:
+                best = {**val, "fiscal_year": data.get("fiscal_year")}
+    return best
+
+
 def get_sponsor_badge(company_name):
     """Return (emoji, label, color) badge for the sponsor status."""
+    # Prefer verified USCIS data
+    verified = lookup_verified_sponsor(company_name)
+    if verified and verified.get("h1b_approvals", 0) > 0:
+        n = verified["h1b_approvals"]
+        fy = verified.get("fiscal_year", "")
+        if n >= 500:
+            return ("🟢", f"Top H1B sponsor — {n:,} approvals FY{fy} (USCIS verified)", "green")
+        elif n >= 100:
+            return ("🟢", f"Strong H1B sponsor — {n:,} approvals FY{fy} (USCIS verified)", "green")
+        elif n >= 20:
+            return ("🟡", f"H1B sponsor — {n} approvals FY{fy} (USCIS verified)", "yellow")
+        else:
+            return ("🟡", f"Some H1B history — {n} approvals FY{fy} (USCIS verified)", "yellow")
+
     info = lookup_sponsor(company_name)
 
     if not info:

@@ -561,11 +561,33 @@ with tab_sponsors:
             st.markdown(f"{emoji} **[{sponsor['company']}]({careers_url})**")
             st.caption(f"H1B volume: {sponsor['h1b_volume'].replace('_',' ')}")
 
+    # Verified top sponsors from USCIS data
+    st.divider()
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        vpath = _P(__file__).parent / "config" / "h1b_sponsors_verified.json"
+        if vpath.exists():
+            vdata = _json.loads(vpath.read_text())
+            sponsors = vdata.get("sponsors", {})
+            fy = vdata.get("fiscal_year", "")
+            st.markdown(f"### 📊 Top 40 H1B Sponsors — USCIS Verified (FY{fy})")
+            st.caption(f"Actual petition approval counts from {vdata.get('source','USCIS')}. These are the highest-volume sponsors nationally.")
+            top40 = list(sponsors.items())[:40]
+            vc = st.columns(2)
+            for i, (norm, d) in enumerate(top40):
+                with vc[i % 2]:
+                    careers = f"https://www.google.com/search?q={d['employer'].replace(' ', '+')}+careers"
+                    st.markdown(f"{i+1}. **[{d['employer'].title()}]({careers})** — {d['h1b_approvals']:,} approvals")
+            st.caption("Note: Top nationally = mostly tech/consulting. Use the SCM-focused list above for role-relevant targets. Refresh with `python scripts/refresh_h1b_sponsors.py`.")
+    except Exception as e:
+        st.caption(f"Verified data unavailable: {e}")
+
     st.divider()
     st.info("""
     **Why this matters for STEM OPT:** Bhumika's MSCM is STEM-designated, giving her 36 months of OPT.
-    But the 24-month extension REQUIRES the employer to be E-Verify enrolled. Companies on this list are
-    confirmed E-Verify and have a history of sponsoring H1B for SCM/Ops roles.
+    But the 24-month extension REQUIRES the employer to be E-Verify enrolled. The SCM list above is
+    curated for role relevance; the verified list shows actual USCIS approval volume.
 
     **Strategy:** Apply directly at these companies' careers pages, not just from job board scrapes.
     """)
