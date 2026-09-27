@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "updated_at": "2026-09-23T19:12:03.273200",
+  "applications": [],
+  "coffee_chats": [
+    {
+      "id": 1,
+      "chat_date": "2026-06-30",
+      "person_name": "Shivam Suru",
+      "person_role": "AI Product Manager",
+      "person_company": "Amazon",
+      "linkedin_url": "",
+      "how_connected": "Coffee chat (networking)",
+      "summary": "First coffee chat. Shivam is an AI Product Manager at Amazon. Wide-ranging conversation covering role targeting, story prep, networking cadence, portfolio depth, visa-aware company targeting, leveraging unique background, and interview strategy. Very encouraging — emphasized effort over outcome (\"you'll find a job somewhere, but give your best\").",
+      "key_takeaways": "- Broaden role targeting beyond SCM: also pursue Product Management, Program Management, Vendor Management, and general Management roles.\n- STAR stories: build an Excel sheet of all stories formatted in STAR method, categorized by behavioral theme (conflict management, prioritization, etc.).\n- Networking tracker: build an Excel of everyone reached out to on LinkedIn — how they're beneficial, company culture, where they belong, what challenges the company faces.\n- Networking cadence: ~2 coffee chats/week, plus 1 chat with a senior/partner. 1 mock interview every 2 weeks (2/month) to strengthen stories and learn current top interview questions.\n- Start interview prep VERY early. Build portfolio VERY early.\n- Portfolio depth matters as much as having projects: deeply understand how each project was made, how AI was used, and the real impact created.\n- Top-20 H1B-sponsoring companies: make a list, tailor resume to each company's culture/values, and design portfolio around cultural values (e.g., Amazon = Leadership Principles; other companies have their own).\n- Unique background is an asset: Microbiology → Uber (policy/risk management) → Supply Chain Management + AI. Companies like Google value unique backgrounds. NEED TO FIGURE OUT how to translate/portray this uniqueness as a strength (future brainstorm topic).\n- Interview reality: apply to ~150 jobs → ~5 interviews → goal is to convert 4 of 5 through solid, well-scripted prep. Getting the interview is half the battle; converting it to an offer is the skill.\n- Story clarity: stories should be so clear and transitional that the interviewer can easily take notes and later discuss with their team. Not complicated — clear, structured, impactful.\n- Interviews dive progressively deeper. The interview industry is changing — stay current.\n- Post-December eligibility: can apply for internships that start post-December. Chances low (~0.01) but worth trying. Look for both jobs AND internships joinable post-December.\n- Work ethic: wake up early, leave late, work on one thing or another all day.",
+      "action_items": "- Build STAR stories Excel sheet, categorized by behavioral theme (conflict, prioritization, leadership, etc.)\n- Build LinkedIn outreach tracker (person, role, company, culture, company challenges, how beneficial)\n- Set networking cadence: 2 coffee chats/week + 1 senior/partner chat\n- Schedule 1 mock interview every 2 weeks (2/month)\n- Start interview prep now (don't wait)\n- Build portfolio now — with deep understanding of each project (how built, AI usage, impact)\n- Make list of top 20 H1B-sponsoring companies\n- Tailor resume + portfolio to each target company's cultural values\n- Brainstorm how to translate unique background (Microbiology + Uber policy/risk + SCM + AI) into a marketable strength\n- Add Product Management, Program Management, Vendor Management roles to job search",
+      "follow_up_date": "",
+      "created_at": "2026-08-01T16:48:55.792937"
+    }
+  ],
+  "todos": [
+    {
+      "id": 1,
+      "item": "Brainstorm how to translate unique background (Microbiology + Uber policy/risk + SCM + AI) into a marketable strength for interviews & applications",
+      "category": "positioning",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "high",
+      "created_at": "2026-08-01T16:53:14.355042",
+      "done_at": null
+    },
+    {
+      "id": 2,
+      "item": "Build STAR stories categorized by behavioral theme (conflict, prioritization, leadership, failure, ambiguity)",
+      "category": "interview-prep",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "high",
+      "created_at": "2026-08-01T16:53:14.356066",
+      "done_at": null
+    },
+    {
+      "id": 3,
+      "item": "Compile top 20-40 H1B sponsoring companies and tailor resume to each culture",
+      "category": "job-search",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "high",
+      "created_at": "2026-08-01T16:53:14.357253",
+      "done_at": null
+    },
+    {
+      "id": 4,
+      "item": "Schedule 2 coffee chats/week + 1 senior/partner chat",
+      "category": "networking",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.358386",
+      "done_at": null
+    },
+    {
+      "id": 5,
+      "item": "Do 1 mock interview every 2 weeks",
+      "category": "interview-prep",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.359490",
+      "done_at": null
+    },
+    {
+      "id": 6,
+      "item": "Build STAR stories Excel sheet, categorized by behavioral theme (conflict, prioritization, leadership, etc.)",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.361949",
+      "done_at": null
+    },
+    {
+      "id": 7,
+      "item": "Build LinkedIn outreach tracker (person, role, company, culture, company challenges, how beneficial)",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.363042",
+      "done_at": null
+    },
+    {
+      "id": 8,
+      "item": "Set networking cadence: 2 coffee chats/week + 1 senior/partner chat",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.364168",
+      "done_at": null
+    },
+    {
+      "id": 9,
+      "item": "Schedule 1 mock interview every 2 weeks (2/month)",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.365282",
+      "done_at": null
+    },
+    {
+      "id": 10,
+      "item": "Start interview prep now (don't wait)",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.366311",
+      "done_at": null
+    },
+    {
+      "id": 11,
+      "item": "Build portfolio now — with deep understanding of each project (how built, AI usage, impact)",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.367543",
+      "done_at": null
+    },
+    {
+      "id": 12,
+      "item": "Make list of top 20 H1B-sponsoring companies",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.368713",
+      "done_at": null
+    },
+    {
+      "id": 13,
+      "item": "Tailor resume + portfolio to each target company's cultural values",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.369724",
+      "done_at": null
+    },
+    {
+      "id": 14,
+      "item": "Brainstorm how to translate unique background (Microbiology + Uber policy/risk + SCM + AI) into a marketable strength",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.370958",
+      "done_at": null
+    },
+    {
+      "id": 15,
+      "item": "Add Product Management, Program Management, Vendor Management roles to job search",
+      "category": "from-coffee-chat",
+      "source": "Shivam Suru",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-08-01T16:53:14.372050",
+      "done_at": null
+    }
+  ],
+  "interview_recs": [
+    {
+      "id": 1,
+      "recommendation": "Stories should be so clear and transitional the interviewer can easily take notes and discuss with their team — structured, impactful, not complicated",
+      "category": "Story Craft",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.341264"
+    },
+    {
+      "id": 2,
+      "recommendation": "Apply STAR method to every story, categorized by behavioral theme (conflict, prioritization, etc.)",
+      "category": "Story Craft",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.342630"
+    },
+    {
+      "id": 3,
+      "recommendation": "Interviews dive progressively deeper — be ready for follow-up layers on every story",
+      "category": "Interview Dynamics",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.343943"
+    },
+    {
+      "id": 4,
+      "recommendation": "Interview math: ~150 applications → ~5 interviews → aim to convert 4 of 5. Getting the interview is half the battle; converting is the skill",
+      "category": "Strategy",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.345144"
+    },
+    {
+      "id": 5,
+      "recommendation": "Start interview prep VERY early — don't wait",
+      "category": "Timing",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.346399"
+    },
+    {
+      "id": 6,
+      "recommendation": "Understand your portfolio projects deeply: how built, how AI was used, real impact — depth matters as much as having the project",
+      "category": "Portfolio",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.347696"
+    },
+    {
+      "id": 7,
+      "recommendation": "Tailor resume + portfolio to each company's cultural values (e.g., Amazon Leadership Principles)",
+      "category": "Company Fit",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.348831"
+    },
+    {
+      "id": 8,
+      "recommendation": "Leverage unique background (Microbiology + Uber policy/risk + SCM + AI) — companies like Google value it",
+      "category": "Positioning",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.350124"
+    },
+    {
+      "id": 9,
+      "recommendation": "Broaden target roles: Product, Program, Vendor, and general Management — not just SCM",
+      "category": "Role Targeting",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.351310"
+    },
+    {
+      "id": 10,
+      "recommendation": "Do a mock interview every 2 weeks to keep stories sharp and learn current top questions",
+      "category": "Practice",
+      "recommended_by": "Shivam Suru",
+      "person_role": "AI Product Manager, Amazon",
+      "created_at": "2026-08-01T16:53:14.352647"
+    }
+  ],
+  "star_stories": [],
+  "mock_sessions": [],
+  "prep_notes": [],
+  "dismissed_jobs": []
+}
