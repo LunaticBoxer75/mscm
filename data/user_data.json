@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-09-27T01:17:44.222463",
+  "updated_at": "2026-09-27T01:17:45.711145",
   "applications": [],
   "coffee_chats": [
     {
@@ -68,10 +68,11 @@
       "item": "Do 1 mock interview every 2 weeks",
       "category": "interview-prep",
       "source": "Shivam Suru",
-      "status": "open",
+      "status": "deleted",
       "priority": "medium",
       "created_at": "2026-08-01T16:53:14.359490",
-      "done_at": null
+      "done_at": null,
+      "updated_at": "2026-09-27T01:17:45.711132"
     },
     {
       "id": 6,
