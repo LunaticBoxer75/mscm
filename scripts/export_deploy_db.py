@@ -68,18 +68,25 @@ def main():
             AND job_id NOT IN ({placeholders})""",
         tracked,
     ).rowcount
-    # Retention: nothing under 70 is kept (user's rule, 2026-09-27). The scraper
-    # already skips these; this catches rows a rescore pushed below 70. Kept anyway:
-    # jobs she tracked or dismissed (her records), and Pass-2 rows — Claude already
-    # read those, and deleting them would let the next scrape re-insert them at
-    # their keyword score and have Claude re-read them every day.
+    # Retention: nothing under 70 is kept (user's rule, 2026-09-27) — including jobs Claude
+    # read and rated below 70 ("remove low-rated automatically, even the existing ones").
+    # Those URLs go to rejected_urls first so the scraper skips them; otherwise the next
+    # scrape re-inserts them at their keyword score and Claude re-reads them every day.
+    # Kept regardless: jobs she applied to or dismissed (her records).
+    src.execute("""CREATE TABLE IF NOT EXISTS rejected_urls
+                   (job_url TEXT PRIMARY KEY, reason TEXT, rejected_at TEXT)""")
+    src.execute(
+        f"""INSERT OR IGNORE INTO rejected_urls
+            SELECT job_url, 'claude rated ' || CAST(score AS INT), datetime('now') FROM jobs
+            WHERE COALESCE(score, 0) < 70 AND job_url != ''
+            AND json_extract(score_breakdown, '$.scorer') = 'ai'
+            AND job_id NOT IN ({placeholders})""", tracked)
     low = src.execute(
-        f"""DELETE FROM jobs
-            WHERE COALESCE(score, 0) < 70
-            AND COALESCE(json_extract(score_breakdown, '$.scorer'), '') != 'ai'
-            AND job_id NOT IN ({placeholders})""",
+        f"""DELETE FROM jobs WHERE COALESCE(score, 0) < 70 AND job_id NOT IN ({placeholders})""",
         tracked,
     ).rowcount
+    # The memory only needs to outlast the scraper's lookback (7 days); keep 30
+    src.execute("DELETE FROM rejected_urls WHERE rejected_at < datetime('now', '-30 days')")
     src.commit()
     if pruned:
         print(f"Pruned {pruned} jobs older than 90 days")

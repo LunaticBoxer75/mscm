@@ -24,7 +24,8 @@ the same change (standing instruction from the user, 2026-09-27).
 | **Role priority: risk / compliance / trust & safety / fraud / ops > supply chain > program/product mgmt** | 2026-09 | Encoded in both scorers |
 | **Seattle area first (own tab), then big US metros, then the rest** | 2026-09-27 | `src/locations.py`; location points 15/13 Seattle, 11 remote, 10 big metro, 8 rest of WA, 5 elsewhere |
 | **She has 4 years of experience** + MSCM (June 2027) | 2026-09-27 | 5 years required is NOT a blocker; 6 → ≤65; 7+ → ≤40 |
-| **Nothing scoring under 70 is kept** | 2026-09-27 | Scraper skips <70; export deletes <70 except tracked/dismissed/Pass-2 rows |
+| **Nothing scoring under 70 is kept — including jobs Claude rated under 70** ("remove low-rated automatically, even the existing ones") | 2026-09-27 | Scraper skips <70; export deletes every <70 row except her tracked/dismissed jobs. Claude-rated ones go to `rejected_urls` (30 days) so the scraper doesn't re-add them |
+| **Claude reads Seattle LinkedIn jobs too** — fetch their descriptions first | 2026-09-27 | Step 3b; LinkedIn search returns no description |
 | **LinkedIn stays daily** despite being ~98% of scrape time | 2026-09-26 | Don't drop or down-sample it |
 | **Bellevue / Kirkland / Redmond not searched** — Seattle's radius covers them (they added 9 of 169) | 2026-09-26 | Their jobs still land in the Seattle tab |
 | **Dropped searches:** "operations leadership development program" (7% relevant), "process improvement analyst" (10%) | 2026-09-27 | Don't re-add |
@@ -151,6 +152,21 @@ from step 1 are the diagnostic.
 
 ---
 
+## 3b. Fetch descriptions for top Seattle LinkedIn jobs [REQUIRED, ~3 min]
+
+LinkedIn search results have no description, so without this Claude can't read most of the Seattle
+panel (on 2026-09-27: 1,148 Seattle FT jobs at 80+, only 42 readable). One request per posting with
+a 0.6-1.2s pause; it stops itself after 8 empty responses in a row (likely a block) and reports it.
+Fetched rows are rescored with Pass 1 so its years/clearance/sponsorship rules can fire.
+
+```
+cd /Users/aniketsw/workspaces/mscm && python -u -W ignore scripts/backfill_linkedin_descriptions.py --limit 100 --region seattle --min-score 80
+```
+
+Expect ~80% success. If it stops early for blocks, carry on — Pass 2 just reads fewer Seattle jobs.
+
+---
+
 ## 4. Pass 2 — Claude reads the descriptions [REQUIRED]
 
 Pass 1 is keyword rules; Pass 2 is reading the actual posting. It matters: on 2026-09-26, of 250 jobs
@@ -260,7 +276,9 @@ PY
 The `"scorer": "ai"` stamp makes 4a idempotent and protects these rows from the <70 cleanup and from
 `rescore_all.py`.
 
-**4e. Verify.** Re-run 4a: every panel must report `candidates=0`.
+**4e. Verify.** Every job_id in `/tmp/pass2_candidates.json` must now be stamped `scorer=ai`. (Re-running 4a
+can still show candidates: panels often hold more than the per-run cap, so the next ones move up —
+that's expected, not a failure.)
 
 ---
 
@@ -340,8 +358,9 @@ Jobs she has applied to always ship to the dashboard regardless of score, so her
 their details.
 
 1. **90-day prune** — postings whose posting date (first-seen if undated) is over 90 days old.
-2. **Under-70 cleanup** — any row scoring below 70, EXCEPT jobs she applied to or dismissed and
-   Pass-2 rows (deleting a read row lets the next scrape re-insert it for Claude to re-read daily).
+2. **Under-70 cleanup** — every row scoring below 70, including ones Claude read, EXCEPT jobs she
+   applied to or dismissed. Claude-rated ones are first recorded in `rejected_urls`, which the scraper
+   skips, so they can't come back and be re-read (entries expire after 30 days).
 
 Both protect her tracked/dismissed job_ids via `user_store`; with no token and no local snapshot the
 script refuses to prune. Report both counts it prints. Before the first run after a big scoring change,
@@ -415,8 +434,10 @@ exported, prune + cleanup counts, deploy DB size.
 
 - **`database is locked`** — another writer holds the DB (a scrape, the dashboard, a rescore). The
   scraper's own connection gives up after 5s, so never run `rescore_all.py` or the export while a
-  scrape is writing. Writebacks set `busy_timeout=60000`. A `mode=ro` read can fail transiently with
-  error 14 while a writer commits — retry once. Never use `immutable=1` (torn reads).
+  scrape is writing. Writebacks set `busy_timeout=60000`. A `mode=ro` read failing with **error 14 "unable to open database file"** usually isn't
+  transient: once the last writer closes, SQLite removes `jobs.db-shm`, and a read-only connection
+  can't recreate it. Open it once read-write — `sqlite3 data/jobs.db "PRAGMA quick_check;"` — and
+  read-only works again (hit after the 2026-09-27 rescore). Never use `immutable=1` (torn reads).
 - **`database disk image is malformed`** — stop. Don't export or publish. Run
   `sqlite3 "file:data/jobs.db?mode=ro" "PRAGMA integrity_check;"`, copy the file aside, recover from
   the last good state (backups: `/tmp/jobs_pre_*.db`).
@@ -433,13 +454,12 @@ exported, prune + cleanup counts, deploy DB size.
 
 ## Weekly / optional — keep OUT of the daily path
 
-- **[WEEKLY] Pass-2 backfill of the existing top.** Daily Pass 2 only reads the latest scrape day. Once
-  a week, read the top ~150 Seattle + ~100 national full-time jobs with descriptions that haven't been
-  read (same 4b-4d flow, selecting by score across all days). Done 2026-09-26 for the first 250.
-- **[WEEKLY] LinkedIn description backfill.** LinkedIn rows (~65%) have no description because
-  `linkedin_fetch_description` isn't passed — one extra LinkedIn request per posting. Backfill the top
-  ~300 LinkedIn rows by score (~3.5 min, 0.3-0.5s jitter) and count "fetched N, got description for M"
-  (the jobspy helper swallows errors and returns `{}`).
+- **[WEEKLY / after scoring changes] Pass-2 backfill of the existing top.** Daily Pass 2 reads only the
+  latest scrape day. Also read unread full-time jobs across all days — Seattle ≥80 and national ≥85 with
+  descriptions (run step 3b with a higher `--limit` first). Same 4b-4d flow; ~12 agents for ~600 jobs.
+  Done 2026-09-26 (250) and 2026-09-27 (577).
+- **[WEEKLY] Wider LinkedIn description fetch:** `scripts/backfill_linkedin_descriptions.py --region all
+  --limit 400` (national too). ~1.6s per posting.
 - **[WHEN RULES CHANGE] Evaluate the scorer:** `python scripts/eval_quick_scorer.py` (read-only;
   ~550 hand-labelled rows — labels were assigned by the agent that wrote the rules, so also spot-check
   big movers yourself). Then `scripts/rescore_all.py --apply` (step 2).

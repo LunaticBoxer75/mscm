@@ -39,9 +39,11 @@ python -m src.pipeline report    # Just generate report
 - **Seattle area first** (its own tab), **then big US metros** (Bay Area, New York area, Austin,
   Dallas-Fort Worth, LA, Chicago, Atlanta, Boston, Denver, …), **then everything else**. Defined once in
   `src/locations.py`; region comes from the job's location, not which search found it.
-- **Nothing scoring under 70 is kept** (user's rule, 2026-09-27): the scraper skips it and the export
-  deletes it — except jobs she applied to/dismissed, and rows Claude already read (deleting those
-  makes the next scrape re-insert them for Claude to re-read daily).
+- **Nothing scoring under 70 is kept — including jobs Claude rated under 70** (user's rule, 2026-09-27).
+  The scraper skips <70; the export deletes every <70 row except jobs she applied to/dismissed.
+  Claude-rated ones are remembered in `rejected_urls` (30 days) so the scraper can't re-add them.
+- **Claude reads Seattle LinkedIn jobs too**: `scripts/backfill_linkedin_descriptions.py` fetches their
+  descriptions first (LinkedIn search returns none; ~80% success, ~1.6s each).
 - **She has 4 years of experience** + an MSCM (June 2027). "5 years required" is not a blocker.
 
 ## Architecture

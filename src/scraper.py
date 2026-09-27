@@ -67,6 +67,10 @@ def get_db():
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_url ON jobs(job_url) WHERE job_url != ''")
     except sqlite3.IntegrityError:
         pass
+    # Postings Claude read and rated below 70 are deleted; their URL is remembered here so
+    # the next scrape (same 7-day window) doesn't re-insert them for Claude to re-read daily.
+    conn.execute("""CREATE TABLE IF NOT EXISTS rejected_urls
+                    (job_url TEXT PRIMARY KEY, reason TEXT, rejected_at TEXT)""")
     conn.commit()
     return conn
 
@@ -234,6 +238,7 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
     skipped = 0
 
     conn = get_db()
+    rejected = {r[0] for r in conn.execute("SELECT job_url FROM rejected_urls")}
     all_new_jobs = []
     done, total, started = 0, len(tasks), datetime.now()
 
@@ -252,7 +257,7 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
             if jobs_df is not None and not jobs_df.empty:
                 for _, row in jobs_df.iterrows():
                     job_data = _row_to_job(row, jtype, search_term, category, region_tag)
-                    if job_data is None:
+                    if job_data is None or job_data["job_url"] in rejected:
                         continue
                     score, breakdown = score_row(
                         job_data["title"], job_data["company"], job_data["location"],
