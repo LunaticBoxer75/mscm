@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-09-27T01:17:41.299083",
+  "updated_at": "2026-09-27T01:17:42.692267",
   "applications": [],
   "coffee_chats": [
     {
@@ -46,10 +46,11 @@
       "item": "Compile top 20-40 H1B sponsoring companies and tailor resume to each culture",
       "category": "job-search",
       "source": "Shivam Suru",
-      "status": "open",
+      "status": "deleted",
       "priority": "high",
       "created_at": "2026-08-01T16:53:14.357253",
-      "done_at": null
+      "done_at": null,
+      "updated_at": "2026-09-27T01:17:42.692246"
     },
     {
       "id": 4,
