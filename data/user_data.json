@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-09-27T01:17:38.325998",
+  "updated_at": "2026-09-27T01:17:39.736175",
   "applications": [],
   "coffee_chats": [
     {
@@ -35,10 +35,11 @@
       "item": "Build STAR stories categorized by behavioral theme (conflict, prioritization, leadership, failure, ambiguity)",
       "category": "interview-prep",
       "source": "Shivam Suru",
-      "status": "open",
+      "status": "deleted",
       "priority": "high",
       "created_at": "2026-08-01T16:53:14.356066",
-      "done_at": null
+      "done_at": null,
+      "updated_at": "2026-09-27T01:17:39.736167"
     },
     {
       "id": 3,
