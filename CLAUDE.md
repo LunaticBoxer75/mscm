@@ -171,6 +171,14 @@ with `st.navigation` only the open page runs (0.01–0.25s warm).
 once a day), a 12-job shortlist (full-time, not acted on, posted ≤14 days, max 2 per company,
 Seattle 8 / national 4), follow-ups due, high-priority to-dos, mock/STAR nudges.
 
+**Visual design** — theme in `.streamlit/config.toml` (UW purple `#4B2E83`, lavender sidebar, card
+radii); page styles in `app.py`'s `CSS` block. A slim purple brand bar with the freshness pill replaces
+the old big repeated title. Job rows are cards: colored score pill (≥90 green, 80s purple, 70s amber),
+title line, meta line with pills (🤖 Claude read · 🏢 size · 📍 metro · salary · status). The CSS targets
+action buttons by key prefix (`st-key-ok_`, `st-key-x_`, `st-key-sel_`) — keep those prefixes if you
+rename keys. Phones: metrics wrap two per row and card actions stay on the card's row. Check visual
+changes with real screenshots (Playwright driving the installed Chrome), not just AppTest.
+
 **Job rows** (shared `job_row()` on Today and Jobs): 🤖 = Claude read it (Pass 2); ties rank
 Claude-read first, then newest — never alphabetical. "Open ↗" never tracks; ✓ marks applied and queues
 a 7-day follow-up; ✕ dismisses everywhere. Scraped text is HTML-escaped and only http(s) links render

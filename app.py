@@ -206,6 +206,60 @@ def get_comparable_jobs(current_job, limit=3):
     return df.head(limit)
 
 
+CSS = """
+<style>
+/* tighter page top; readable max width */
+.block-container {padding-top: 3.6rem; padding-bottom: 3rem; max-width: 1180px;}  /* clears Streamlit's toolbar */
+/* slim brand bar replaces the big repeated title */
+.brand {display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.4rem;
+        padding:.55rem .9rem; margin-bottom:.6rem; border-radius:.7rem;
+        background:linear-gradient(90deg,#4B2E83 0%,#6B4FA6 100%); color:#fff; font-size:.92rem;}
+.brand b {font-weight:700; letter-spacing:.2px;}
+.brand .fresh {background:rgba(255,255,255,.16); padding:.12rem .55rem; border-radius:999px; font-size:.8rem;}
+.brand .fresh.stale {background:#FEF3C7; color:#92400E;}
+/* metric cards */
+[data-testid="stMetric"] {background:#F6F4FB; border:1px solid #E7E3F1; border-radius:.7rem; padding:.55rem .8rem;}
+[data-testid="stMetricLabel"] p {font-size:.8rem; color:#6B7280;}
+/* job cards */
+.job {display:flex; gap:.75rem; align-items:flex-start; padding:.45rem 0;}
+.job-main {min-width:0;}
+.job-title {font-weight:650; font-size:.95rem; line-height:1.3; color:#111827;}
+.job-meta {font-size:.8rem; color:#6B7280; margin-top:.2rem; line-height:1.7;}
+.score {flex:0 0 auto; min-width:2.35rem; text-align:center; font-weight:700; font-size:.85rem;
+        padding:.3rem .35rem; border-radius:.55rem; margin-top:.05rem;}
+.score.s90 {background:#DCFCE7; color:#166534;}
+.score.s80 {background:#EDE9FE; color:#4B2E83;}
+.score.s70 {background:#FEF3C7; color:#92400E;}
+.score.slow {background:#F3F4F6; color:#6B7280;}
+.pill {display:inline-block; font-size:.72rem; padding:.05rem .45rem; margin-left:.3rem; border-radius:999px;
+       background:#F3F4F6; color:#374151; white-space:nowrap;}
+.pill.ai {background:#EDE9FE; color:#4B2E83;}
+.pill.pay {background:#ECFDF5; color:#047857;}
+.pill.warn {background:#FEF3C7; color:#92400E;}
+.pill.done {background:#DCFCE7; color:#166534;}
+.open-link {font-size:.82rem; font-weight:600; padding:.25rem .6rem; border:1px solid #E7E3F1;
+            border-radius:999px; white-space:nowrap;}
+.open-link:hover {background:#F6F4FB;}
+/* compact action buttons on job cards */
+[class*="st-key-ok_"] button, [class*="st-key-x_"] button, [class*="st-key-sel_"] button {
+    min-height:2rem; padding:.1rem .55rem; font-size:.85rem;}
+[class*="st-key-sel_"] button p {white-space:nowrap;}
+[class*="st-key-x_"] button:hover {border-color:#DC2626; color:#DC2626;}
+[class*="st-key-ok_"] button:hover {border-color:#16A34A; color:#16A34A;}
+/* phones: metrics two per row, and job cards keep their actions on the same row */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {flex-wrap:wrap !important; gap:.5rem;}
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > div {
+      flex:1 1 calc(50% - .5rem) !important; min-width:calc(50% - .5rem) !important;}
+  [data-testid="stHorizontalBlock"]:has(.job) {flex-wrap:nowrap !important; gap:.3rem;}
+  [data-testid="stHorizontalBlock"]:has(.job) > div:first-child {flex:1 1 auto !important; min-width:0 !important;}
+  [data-testid="stHorizontalBlock"]:has(.job) > div:not(:first-child) {flex:0 0 auto !important; width:auto !important; min-width:0 !important;}
+  .open-link {padding:.2rem .45rem;}
+}
+</style>
+"""
+
+
 # --- SHARED UI HELPERS ---
 
 # Save confirmations: user_store calls this after every successful write. Queued
@@ -282,72 +336,71 @@ def _safe_url(u):
     return u if u.startswith(("http://", "https://")) else ""
 
 
-def _metro_badge(row):
-    m = row.get("metro")
-    if row.get("region") != "seattle" and isinstance(m, str) and m:
-        return f" <span style='color:#6b7280;font-size:0.8em'>📍 {html.escape(m)}</span>"
-    return ""
+def _pill(text, kind=""):
+    return f"<span class='pill {kind}'>{html.escape(str(text))}</span>"
 
 
-def _size_badge(row):
-    """Small grey tag: company size tier, or 'via agency' for staffing firms."""
-    if row.get("company_staffing"):
-        return " <span style='color:#9ca3af;font-size:0.8em' title='Staffing agency — the real employer is someone else'>(via agency)</span>"
-    tier = row.get("company_tier")
-    if tier and tier != "unknown":
-        return f" <span style='color:#9ca3af;font-size:0.8em' title='Approx. employees'>🏢 {tier}</span>"
-    return ""
+def _score_class(score):
+    return "s90" if score >= 90 else "s80" if score >= 80 else "s70" if score >= 70 else "slow"
 
 
 def job_row(row, key, apps, selectable=True):
-    """One job line with inline actions. Shared by the Today and Jobs pages.
+    """One job as a card with inline actions. Shared by the Today and Jobs pages.
 
     Scraped text is HTML-escaped: it's rendered with unsafe_allow_html.
     "Open" never tracks anything; only ✓ records an application.
     """
     job_id = row.get("job_id", "")
-    score = int(row.get("score") or 0)
+    score = float(row.get("score") or 0)
     status = (apps.get(job_id) or {}).get("status")
-    dot = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
-    c_pick, c_info, c_sal, c_open, c_ok, c_x = st.columns([0.5, 5, 1.3, 0.8, 0.45, 0.45])
-    with c_pick:
-        if selectable:
-            if st.button(dot, key=f"sel_{key}", help=f"Score {score} — show details"):
-                st.session_state["selected_job_idx"] = row.get("index")
-        else:
-            st.markdown(f"<span title='Score {score}'>{dot}</span>", unsafe_allow_html=True)
-    with c_info:
-        ai = "🤖 " if row.get("ai_read") else ""
+
+    meta = [html.escape(str(row.get("company", ""))), html.escape(str(row.get("location", "")))]
+    pills = []
+    if row.get("ai_read"):
+        pills.append(_pill("🤖 Claude read", "ai"))
+    if row.get("company_staffing"):
+        pills.append(_pill("via agency", "warn"))
+    elif row.get("company_tier") not in (None, "unknown") and isinstance(row.get("company_tier"), str):
+        pills.append(_pill(f"🏢 {row['company_tier']}"))
+    m = row.get("metro")
+    if row.get("region") != "seattle" and isinstance(m, str) and m:
+        pills.append(_pill(f"📍 {m}"))
+    lo, hi = row.get("salary_min"), row.get("salary_max")
+    if pd.notna(lo):
+        pills.append(_pill(f"${int(lo/1000)}K–${int(hi/1000)}K" if pd.notna(hi) else f"${int(lo/1000)}K+", "pay"))
+    if status in ("applied", "interviewing", "offer"):
+        pills.append(_pill(f"✔ {status}", "done"))
+
+    cols = st.columns([8, 1.05, 0.55, 0.55] + ([1.15] if selectable else []), vertical_alignment="center")
+    with cols[0]:
         st.markdown(
-            f"<span style='font-size:0.9em' title='{'Claude read this posting' if ai else 'Keyword score only'}'>"
-            f"{ai}<b>{html.escape(str(row.get('title', '')))}</b> @ {html.escape(str(row.get('company', '')))}"
-            f"{_size_badge(row)} · {html.escape(str(row.get('location', '')))}{_metro_badge(row)}</span>",
+            f"<div class='job'><span class='score {_score_class(score)}' "
+            f"title=\"{'Claude read this posting' if row.get('ai_read') else 'Keyword score'}\">{score:.0f}</span>"
+            f"<div class='job-main'><div class='job-title'>{html.escape(str(row.get('title', '')))}</div>"
+            f"<div class='job-meta'>{' · '.join(x for x in meta if x)} {''.join(pills)}</div></div></div>",
             unsafe_allow_html=True)
-    with c_sal:
-        lo, hi = row.get("salary_min"), row.get("salary_max")
-        if pd.notna(lo):
-            sal = f"${int(lo/1000)}K-${int(hi/1000)}K" if pd.notna(hi) else f"${int(lo/1000)}K+"
-            st.markdown(f"<span style='font-size:0.85em;color:#059669'>{sal}</span>", unsafe_allow_html=True)
-    with c_open:
+    with cols[1]:
         url = _safe_url(row.get("job_url"))
         if url:
-            st.markdown(f"<a href='{html.escape(url, quote=True)}' target='_blank' rel='noopener' "
-                        f"style='font-size:0.85em'>Open ↗</a>", unsafe_allow_html=True)
-    with c_ok:
-        if status in ("applied", "interviewing", "offer"):
-            st.markdown(f"<span title='{status}'>✔️</span>", unsafe_allow_html=True)
-        elif st.button("✓", key=f"ok_{key}", help="Mark applied (queues a 7-day follow-up)"):
+            st.markdown(f"<a class='open-link' href='{html.escape(url, quote=True)}' target='_blank' "
+                        f"rel='noopener'>Open ↗</a>", unsafe_allow_html=True)
+    with cols[2]:
+        if status not in ("applied", "interviewing", "offer") and st.button(
+                "✓", key=f"ok_{key}", help="Mark applied (queues a 7-day follow-up)"):
             update_application(job_id, "applied")
             st.rerun()
-    with c_x:
+    with cols[3]:
         if st.button("✕", key=f"x_{key}", help="Dismiss — hide this job everywhere"):
             dismiss_job(job_id)
             st.rerun()
+    if selectable:
+        with cols[4]:
+            if st.button("Details", key=f"sel_{key}"):
+                st.session_state["selected_job_idx"] = row.get("index")
 
 
 # --- HEADER ---
-st.title("🎯 MSCM Job Search Dashboard")
-st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM (Jun 2026 – May 2027)")
+st.markdown(CSS, unsafe_allow_html=True)
 flush_toasts()  # confirmations queued before the last rerun
 
 
@@ -373,9 +426,13 @@ except user_store.StoreError as e:
     st.error(f"⚠️ Your saved data can't be read: {e}")
     st.stop()
 _updated = jobs_updated_date()
+_fresh = ""
 if _updated:
     _age = (date.today() - date.fromisoformat(_updated)).days
-    st.caption(f"Jobs updated **{_updated}**" + (f" · ⚠️ {_age} days ago" if _age > 3 else ""))
+    _fresh = (f"<span class='fresh stale'>⚠️ Jobs updated {_updated} · {_age} days ago</span>" if _age > 3
+              else f"<span class='fresh'>Jobs updated {_updated}</span>")
+st.markdown(f"<div class='brand'><span>🎯 <b>MSCM Job Search</b> · Bhumika Choudhary · UW Foster "
+            f"MSCM '27</span>{_fresh}</div>", unsafe_allow_html=True)
 
 if user_store.is_degraded():
     st.warning("⚠️ Can't reach GitHub right now — showing your last saved data. "
@@ -495,10 +552,12 @@ def page_jobs():
     # --- METRICS ---
     if not scored.empty:
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Showing", len(scored))
-        col2.metric("Score 75+", len(scored[scored["score"] >= 75]))
-        col3.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
-        col4.metric("Avg Salary", f"${scored['salary_min'].dropna().mean()/1000:.0f}K" if scored["salary_min"].notna().any() else "—")
+        week = (date.today() - timedelta(days=7)).isoformat()
+        col1.metric("Jobs", f"{len(scored):,}")
+        col2.metric("Claude has read", f"{int(scored['ai_read'].sum()):,}")
+        col3.metric("Posted this week", f"{int((scored['eff_posted'] >= week).sum()):,}")
+        sal = scored["salary_min"].dropna()
+        col4.metric("Median salary", f"${sal.median()/1000:.0f}K" if not sal.empty else "—")
 
         st.divider()
 
