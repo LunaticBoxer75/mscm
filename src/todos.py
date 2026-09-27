@@ -23,7 +23,7 @@ def set_status(todo_id, status):
     user_store.update("todos", todo_id, {
         "status": status,
         "done_at": datetime.now().isoformat() if status == "done" else None,
-    })
+    }, message="To-do marked done" if status == "done" else f"To-do marked {status}")
 
 
 def get_todos(status=None):

@@ -88,7 +88,7 @@ assert get_stats()['unscored_jobs'] == 0, 'INVARIANT VIOLATED: unscored jobs rem
 ```
 
 If this fails, the offender is almost certainly a row with a falsy title —
-`src/quick_scorer.py:229-230` `continue`s past those forever. Fix the row or the `continue`; do not
+`score_all_unscored()` in `src/quick_scorer.py` skips those forever (line numbers drift — grep for it). Fix the row or the `continue`; do not
 skip the assert.
 
 ---
@@ -310,8 +310,10 @@ Keeps jobs scoring **70+, full-time and internships alike** (the old 55 internsh
 the UW CPT one-year rule makes internships a fallback). **DROPS** the legacy aux tables
 (`applications`, `coffee_chats`, `todos`, `interview_recs`, `star_stories`) so a stale copy cannot
 shadow the real store — her data lives in `data/user_data.json` and must never be copied here.
-**Destructive:** it also `DELETE`s rows older than 90 days from `data/jobs.db`, the only full copy,
-protected only by job_ids that have an application record. Report the prune count it prints.
+**Destructive:** it also `DELETE`s postings whose posting date (or, if undated, first-seen date) is
+over 90 days old from `data/jobs.db`, the only full copy — protected only by job_ids she has an
+application record for. The first run after 2026-09-26 prunes ~13K rows (the old logic keyed on
+first-seen date and missed them). Report the prune count it prints.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python scripts/export_deploy_db.py
@@ -338,7 +340,7 @@ daily data refresh.
 
 ## Health checks
 
-Run all four after step 8. Any failure is a silent-failure alarm — report it, do not swallow it.
+Run all five after step 8. Any failure is a silent-failure alarm — report it, do not swallow it.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python -c "
@@ -353,6 +355,13 @@ cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import prep_content; 
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import user_store; s=user_store.stats(); print(s); assert sum(s.values())>0, 'her store read as empty — check MSCM_GITHUB_TOKEN / the user-data branch'"
+```
+
+One row per posting (the unique URL index should make this impossible; if it isn't 0, the index was
+dropped — re-run `python3 scripts/dedupe_jobs.py --apply`):
+
+```
+cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "SELECT COUNT(*)-COUNT(DISTINCT job_url) AS duplicate_urls FROM jobs WHERE job_url!='';"
 ```
 
 Every dashboard page renders (headless; forces MSCM_STORE_MODE=file, never touches GitHub):

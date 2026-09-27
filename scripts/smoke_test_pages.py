@@ -16,14 +16,15 @@ HARNESS = '''
 import os, sys, runpy, streamlit as st
 sys.path.insert(0, os.getcwd())
 class Nav:
-    def __init__(self, pages): self.pages = pages
+    def __init__(self, pages):
+        self.pages = [pg for sec in pages.values() for pg in sec] if isinstance(pages, dict) else pages
     def run(self):
         target = os.environ["MSCM_TEST_PAGE"]
         next(p for p in self.pages if p._page.__name__ == "page_" + target)._page()
 st.navigation = Nav
 runpy.run_path("app.py", run_name="__main__")
 '''
-pages = ["jobs","tracker","todos","networking","interview","referrals","sponsors",
+pages = ["today","jobs","tracker","todos","networking","interview","referrals","sponsors",
          "skills","insights","fellowships","projects","tools","export"]
 bad_total = 0
 for p in pages:

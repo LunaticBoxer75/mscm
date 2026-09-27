@@ -59,7 +59,12 @@ COLLECTIONS = [
     "mock_sessions",
     "prep_notes",
     "dismissed_jobs",
+    "meta",            # small key/value records, e.g. her last-visit dates
 ]
+
+# Optional callback(message) run after every successful write. The dashboard uses
+# it to confirm saves; scripts leave it None.
+on_write = None
 
 CACHE_TTL = 60        # seconds before a remote read is considered stale
 RETRY_AFTER = 30      # seconds to wait before retrying GitHub after a failed read
@@ -239,6 +244,11 @@ def _mutate(fn, message):
             else:
                 _write_local(data)
             _cache, _cache_at, _degraded_until = data, time.time(), 0.0
+            if on_write:
+                try:
+                    on_write(message)
+                except Exception:
+                    pass  # a confirmation must never break a successful save
             return result
         raise StoreError(f"Gave up after {MAX_CONFLICTS} write conflicts — try again.")
 

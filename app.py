@@ -9,9 +9,10 @@ They must stay separate. Her data used to live in the deploy DB, so every
 dashboard (Streamlit Cloud's filesystem is ephemeral).
 """
 
+import html
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -45,7 +46,17 @@ def _load_jobs_raw(min_score):
         ORDER BY score DESC
     """, conn, params=(min_score,))
     conn.close()
-    return df
+    if df.empty:
+        return df
+    # Claude read this job (Pass 2) vs keyword score only (Pass 1)
+    df["ai_read"] = df["score_breakdown"].fillna("").str.contains(r'"scorer"\s*:\s*"ai"', regex=True)
+    # Posting date when real, else first-seen date
+    posted = df["date_posted"].where(df["date_posted"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}"), None)
+    df["eff_posted"] = posted.fillna(df["scraped_at"].astype(str).str[:10])
+    # Thousands of jobs share a score; within a tie, Claude-read first, then newest.
+    # (Without this, ties came back in arbitrary order — effectively alphabetical.)
+    return df.sort_values(["score", "ai_read", "eff_posted"], ascending=False,
+                          kind="stable").reset_index(drop=True)
 
 
 def load_jobs(min_score=50):
@@ -86,7 +97,7 @@ def load_applications():
 def dismiss_job(job_id):
     if job_id in dismissed_ids():
         return
-    user_store.add("dismissed_jobs", {"job_id": job_id}, message="Dismiss job via dashboard")
+    user_store.add("dismissed_jobs", {"job_id": job_id}, message="Job dismissed")
     _load_jobs_raw.clear()
 
 
@@ -106,10 +117,10 @@ def update_application(job_id, status, notes=None, follow_up_date=None):
         fields["applied_date"] = datetime.now().isoformat()
     if existing:
         user_store.update("applications", existing["id"], fields,
-                          message=f"Application → {status}")
+                          message=f"Marked {status}")
     else:
         user_store.add("applications", {"job_id": job_id, **fields},
-                       message=f"Application → {status}")
+                       message=f"Marked {status}")
 
 
 def get_application_status(job_id):
@@ -126,8 +137,7 @@ def get_todays_top_jobs(limit=5):
     acted = {jid for jid, a in applications_map().items() if a.get("status") not in (None, "new")}
     if acted:
         df = df[~df["job_id"].isin(acted)]
-    sort_cols = [c for c in ("score", "scraped_at") if c in df.columns]
-    return df.sort_values(sort_cols, ascending=False).head(limit)
+    return df.head(limit)  # load_jobs already ranks: score, Claude-read, newest
 
 
 def get_comparable_jobs(current_job, limit=3):
@@ -205,9 +215,121 @@ def skills_gap_table(descriptions):
     return sorted(results, key=lambda x: x["pct"], reverse=True)
 
 
+# --- SHARED UI HELPERS ---
+
+# Save confirmations: user_store calls this after every successful write. Queued
+# in session state because most saves are followed by st.rerun(), which would
+# drop a toast shown immediately.
+_QUIET = ("Seed ", "Record ", "Import ")  # background writes she didn't trigger
+
+
+def _queue_toast(message):
+    if message and not message.startswith(_QUIET):
+        st.session_state.setdefault("_toasts", []).append(message)
+
+
+def flush_toasts():
+    for m in st.session_state.pop("_toasts", []):
+        st.toast(f"Saved — {m}", icon="✅")
+
+
+user_store.on_write = _queue_toast
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def jobs_updated_date():
+    """Date of the newest scrape in the published jobs DB."""
+    conn = get_db()
+    try:
+        v = conn.execute("SELECT MAX(scraped_at) FROM jobs").fetchone()[0]
+    except sqlite3.Error:
+        v = None
+    conn.close()
+    return str(v)[:10] if v else None
+
+
+def visit_baseline():
+    """Her previous visit day, for "new since your last visit".
+
+    Written at most once per day (one small commit). Caveat: opening the
+    dashboard locally with the token set counts as her visit too.
+    """
+    if "visit_baseline" in st.session_state:
+        return st.session_state["visit_baseline"]
+    today = date.today().isoformat()
+    rec = next((m for m in user_store.get("meta") if m.get("key") == "visits"), None)
+    baseline = None
+    try:
+        if rec is None:
+            user_store.add("meta", {"key": "visits", "last": today, "prev": None},
+                           message="Record first visit")
+        elif rec.get("last") != today:
+            baseline = rec.get("last")
+            user_store.update("meta", rec["id"], {"prev": baseline, "last": today},
+                              message="Record visit")
+        else:
+            baseline = rec.get("prev")
+    except user_store.StoreError:
+        baseline = (rec or {}).get("prev")  # read-only mode: still show counts
+    st.session_state["visit_baseline"] = baseline
+    return baseline
+
+
+def _safe_url(u):
+    """Only http(s) links — a scraped `javascript:` URL would run on click."""
+    u = str(u or "")
+    return u if u.startswith(("http://", "https://")) else ""
+
+
+def job_row(row, key, apps, selectable=True):
+    """One job line with inline actions. Shared by the Today and Jobs pages.
+
+    Scraped text is HTML-escaped: it's rendered with unsafe_allow_html.
+    "Open" never tracks anything; only ✓ records an application.
+    """
+    job_id = row.get("job_id", "")
+    score = int(row.get("score") or 0)
+    status = (apps.get(job_id) or {}).get("status")
+    dot = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
+    c_pick, c_info, c_sal, c_open, c_ok, c_x = st.columns([0.5, 5, 1.3, 0.8, 0.45, 0.45])
+    with c_pick:
+        if selectable:
+            if st.button(dot, key=f"sel_{key}", help=f"Score {score} — show details"):
+                st.session_state["selected_job_idx"] = row.get("index")
+        else:
+            st.markdown(f"<span title='Score {score}'>{dot}</span>", unsafe_allow_html=True)
+    with c_info:
+        ai = "🤖 " if row.get("ai_read") else ""
+        st.markdown(
+            f"<span style='font-size:0.9em' title='{'Claude read this posting' if ai else 'Keyword score only'}'>"
+            f"{ai}<b>{html.escape(str(row.get('title', '')))}</b> @ {html.escape(str(row.get('company', '')))}"
+            f" · {html.escape(str(row.get('location', '')))}</span>", unsafe_allow_html=True)
+    with c_sal:
+        lo, hi = row.get("salary_min"), row.get("salary_max")
+        if pd.notna(lo):
+            sal = f"${int(lo/1000)}K-${int(hi/1000)}K" if pd.notna(hi) else f"${int(lo/1000)}K+"
+            st.markdown(f"<span style='font-size:0.85em;color:#059669'>{sal}</span>", unsafe_allow_html=True)
+    with c_open:
+        url = _safe_url(row.get("job_url"))
+        if url:
+            st.markdown(f"<a href='{html.escape(url, quote=True)}' target='_blank' rel='noopener' "
+                        f"style='font-size:0.85em'>Open ↗</a>", unsafe_allow_html=True)
+    with c_ok:
+        if status in ("applied", "interviewing", "offer"):
+            st.markdown(f"<span title='{status}'>✔️</span>", unsafe_allow_html=True)
+        elif st.button("✓", key=f"ok_{key}", help="Mark applied (queues a 7-day follow-up)"):
+            update_application(job_id, "applied")
+            st.rerun()
+    with c_x:
+        if st.button("✕", key=f"x_{key}", help="Dismiss — hide this job everywhere"):
+            dismiss_job(job_id)
+            st.rerun()
+
+
 # --- HEADER ---
 st.title("🎯 MSCM Job Search Dashboard")
 st.caption("Daily job identification for Bhumika Choudhary — UW Foster MSCM (Jun 2026 – May 2027)")
+flush_toasts()  # confirmations queued before the last rerun
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -231,6 +353,11 @@ try:
 except user_store.StoreError as e:
     st.error(f"⚠️ Your saved data can't be read: {e}")
     st.stop()
+_updated = jobs_updated_date()
+if _updated:
+    _age = (date.today() - date.fromisoformat(_updated)).days
+    st.caption(f"Jobs updated **{_updated}**" + (f" · ⚠️ {_age} days ago" if _age > 3 else ""))
+
 if user_store.is_degraded():
     st.warning("⚠️ Can't reach GitHub right now — showing your last saved data. "
                "Saving is paused; changes made now would not be kept. Retrying automatically.")
@@ -335,36 +462,21 @@ def page_jobs():
         col3.metric("Score 60-74", len(scored[(scored["score"] >= 60) & (scored["score"] < 75)]))
         col4.metric("Avg Salary", f"${scored['salary_min'].dropna().mean()/1000:.0f}K" if scored["salary_min"].notna().any() else "—")
 
-        # Today's Top 5 (A4)
-        todays_top = get_todays_top_jobs(5)
-        if not todays_top.empty:
-            st.markdown("### 🔥 Today's Top 5 — Apply to These Now")
-            for _, j in todays_top.iterrows():
-                sal = ""
-                if pd.notna(j.get("salary_min")) and pd.notna(j.get("salary_max")):
-                    sal = f" · ${int(j['salary_min']/1000)}K-${int(j['salary_max']/1000)}K"
-                cols = st.columns([0.3, 5, 1.2])
-                with cols[0]:
-                    st.markdown(f"**{int(j['score'])}**")
-                with cols[1]:
-                    st.markdown(f"**{j['title']}** @ {j['company']} · {j['location']}{sal}")
-                with cols[2]:
-                    if j.get("job_url"):
-                        st.link_button("Apply →", j["job_url"], width="stretch")
         st.divider()
 
     if scored.empty:
         st.info("No scored jobs yet. Run `/find-jobs` in Claude Code.")
     else:
         jobs = filter_jobs(scored)
-        sub_tabs = st.tabs(["Seattle FT", "Seattle Intern", "National FT", "National Intern", "All"])
+        # Full-time first: internships are a fallback only (UW CPT one-year rule, 2026-09-23).
+        sub_tabs = st.tabs(["Seattle FT", "National FT", "Seattle Intern (fallback)",
+                            "National Intern (fallback)", "All"])
 
         def render_table(df, name, key):
             if df.empty:
                 st.info(f"No {name} jobs matching filters.")
                 return
-            display = df[["score", "title", "company", "location", "job_url", "salary_min", "salary_max"]].copy().reset_index(drop=False)
-            display["score"] = display["score"].astype(int)
+            display = df.reset_index(drop=False)
 
             # Paginate — show 25 at a time for fast interaction
             page_size = 25
@@ -375,25 +487,10 @@ def page_jobs():
             total_pages = (len(display) - 1) // page_size + 1
             page_slice = display.iloc[page * page_size:(page + 1) * page_size]
 
+            apps = applications_map()
             with st.container(height=400):
                 for i, row in page_slice.iterrows():
-                    col_btn, col_info, col_salary, col_link = st.columns([0.4, 5, 1.5, 1])
-                    score = row["score"]
-                    color = "🟢" if score >= 90 else "🔵" if score >= 75 else "🟡" if score >= 60 else "⚪"
-                    with col_btn:
-                        if st.button(f"{color}", key=f"{key}_{i}", help=f"Score: {score}"):
-                            st.session_state["selected_job_idx"] = row["index"]
-                    with col_info:
-                        st.markdown(f"<span style='font-size:0.9em'><b>{row['title']}</b> @ {row['company']} · {row['location']}</span>", unsafe_allow_html=True)
-                    with col_salary:
-                        sal_min, sal_max = row.get("salary_min"), row.get("salary_max")
-                        if pd.notna(sal_min) and pd.notna(sal_max):
-                            st.markdown(f"<span style='font-size:0.85em;color:#059669'>${int(sal_min/1000)}K-${int(sal_max/1000)}K</span>", unsafe_allow_html=True)
-                        elif pd.notna(sal_min):
-                            st.markdown(f"<span style='font-size:0.85em;color:#059669'>${int(sal_min/1000)}K+</span>", unsafe_allow_html=True)
-                    with col_link:
-                        if row.get("job_url"):
-                            st.markdown(f"<a href='{row['job_url']}' target='_blank' style='font-size:0.85em'>Apply→</a>", unsafe_allow_html=True)
+                    job_row(row, f"{key}_{i}", apps)
 
             # Pagination controls
             if total_pages > 1:
@@ -413,11 +510,11 @@ def page_jobs():
             sea_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
             render_table(sea_ft, "Seattle full-time", "t_sea_ft")
         with sub_tabs[1]:
-            sea_int = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
-            render_table(sea_int, "Seattle internship", "t_sea_int")
-        with sub_tabs[2]:
             nat_ft = jobs[(jobs["region"] == "national") & (jobs["job_type"] != "internship")]
             render_table(nat_ft, "National full-time", "t_nat_ft")
+        with sub_tabs[2]:
+            sea_int = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
+            render_table(sea_int, "Seattle internship", "t_sea_int")
         with sub_tabs[3]:
             nat_int = jobs[(jobs["region"] == "national") & (jobs["job_type"] == "internship")]
             render_table(nat_int, "National internship", "t_nat_int")
@@ -1377,26 +1474,125 @@ def page_export():
     if not apps_exp.empty:
         st.download_button("📥 Download Applications (CSV)", apps_exp.to_csv(index=False), "applications.csv", "text/csv")
 
+def page_today():
+    from src.interview_prep import practice_cadence, story_coverage
+    from src.todos import get_todos, set_status
+
+    st.subheader("☀️ Today")
+    jobs = load_jobs(min_score=70)
+    apps = applications_map()
+    today = date.today()
+    baseline = visit_baseline()
+
+    acted = {j for j, a in apps.items() if a.get("status") not in (None, "new")}
+    due = [(jid, a) for jid, a in apps.items()
+           if a.get("status") in ("applied", "interviewing")
+           and str(a.get("follow_up_date") or "")[:10]
+           and str(a["follow_up_date"])[:10] <= today.isoformat()]
+    high = [t for t in get_todos("open") if t.get("priority") == "high"]
+    cad = practice_cadence()
+
+    m1, m2, m3, m4 = st.columns(4)
+    if baseline and not jobs.empty:
+        m1.metric("New since your last visit", int((jobs["scraped_at"].astype(str).str[:10] > baseline).sum()))
+    else:
+        m1.metric("New since your last visit", "—", help="Counts start from your next visit.")
+    m2.metric("Follow-ups due", len(due))
+    m3.metric("High-priority to-dos", len(high))
+    m4.metric("Last mock interview", "never" if cad["days_since"] is None else f"{cad['days_since']}d ago",
+              delta="overdue" if cad["overdue"] else None, delta_color="inverse")
+
+    # --- Shortlist: full-time, not yet acted on, fresh, max 2 per company ---
+    st.markdown("### 🎯 Your shortlist")
+    if jobs.empty:
+        st.info("No jobs published yet.")
+    else:
+        ft = jobs[(jobs["job_type"] != "internship") & (~jobs["job_id"].isin(acted))]
+        fresh = ft[ft["eff_posted"] >= (today - timedelta(days=14)).isoformat()]
+        pool = fresh if not fresh.empty else ft
+        pool = pool.groupby("company", sort=False).head(2)  # keeps the list varied; order preserved
+        if fresh.empty:
+            st.caption("Nothing posted in the last 14 days — showing the best older postings.")
+        st.caption("🤖 = Claude read the posting." if pool["ai_read"].any() else
+                   "Ranked by keyword score (Claude hasn't read these yet); ties go to the newest posting.")
+        for label, region, n in (("Seattle & area", "seattle", 8), ("Rest of USA", "national", 4)):
+            rows = pool[pool["region"] == region].head(n)
+            st.markdown(f"**{label}**")
+            if rows.empty:
+                st.caption("Nothing new here.")
+            for i, row in rows.iterrows():
+                job_row(row, f"today_{region}_{i}", apps, selectable=False)
+        st.page_link(JOBS_PAGE, label="Browse and filter all jobs", icon="📋")
+
+    # --- Follow-ups ---
+    if due:
+        st.markdown("### 📬 Follow-ups due")
+        conn = get_db()
+        ids = [jid for jid, _ in due]
+        info = {r[0]: r[1:] for r in conn.execute(
+            f"SELECT job_id, title, company, job_url FROM jobs WHERE job_id IN ({','.join('?' * len(ids))})", ids)}
+        conn.close()
+        for jid, a in sorted(due, key=lambda x: str(x[1].get("follow_up_date"))):
+            title, company, url = info.get(jid, ("(posting no longer listed)", "", ""))
+            link = f" · [open ↗]({_safe_url(url)})" if _safe_url(url) else ""
+            st.markdown(f"- **{title}** @ {company} — {a.get('status')}, follow up by "
+                        f"{str(a['follow_up_date'])[:10]}{link}")
+
+    # --- To-dos ---
+    if high:
+        st.markdown("### ✅ High-priority to-dos")
+        for t_ in high[:5]:
+            c1, c2 = st.columns([8, 1])
+            c1.markdown(t_.get("item", ""))
+            if c2.button("Done", key=f"today_todo_{t_['id']}"):
+                set_status(t_["id"], "done")
+                st.rerun()
+        if len(high) > 5:
+            st.page_link(TODOS_PAGE, label=f"All {len(high)} high-priority to-dos", icon="✅")
+
+    # --- Prep nudges ---
+    cov = story_coverage()
+    if cad["overdue"] or cov["missing"]:
+        st.markdown("### 🎤 Interview prep")
+        if cad["overdue"]:
+            st.warning("A mock interview is due — your mentor's cadence is one every 2 weeks.")
+        if cov["missing"]:
+            st.info(f"{len(cov['missing'])} behavioral themes have no STAR story yet "
+                    f"(e.g. {', '.join(cov['missing'][:3])}).")
+        st.page_link(INTERVIEW_PAGE, label="Open Interview Prep", icon="🎤")
+
+
 # --- NAVIGATION ---
 # Pages, not st.tabs: st.tabs executes EVERY tab's code on every click (3,871
 # elements per rerun). With st.navigation only the open page runs.
-pg = st.navigation([
-    st.Page(page_jobs, title="Jobs", icon="📋", url_path="jobs", default=True),
-    st.Page(page_tracker, title="Tracker", icon="📊", url_path="tracker"),
-    st.Page(page_referrals, title="Referrals", icon="🤝", url_path="referrals"),
-    st.Page(page_sponsors, title="Sponsors", icon="🛂", url_path="sponsors"),
-    st.Page(page_skills, title="Skills Gap", icon="🎓", url_path="skills"),
-    st.Page(page_insights, title="Skills Insights", icon="📈", url_path="insights"),
-    st.Page(page_fellowships, title="Fellowships", icon="🏆", url_path="fellowships"),
-    st.Page(page_projects, title="Projects", icon="🛠️", url_path="projects"),
-    st.Page(page_todos, title="To-Dos", icon="✅", url_path="todos"),
-    st.Page(page_interview, title="Interview Prep", icon="🎤", url_path="interview"),
-    st.Page(page_networking, title="Networking", icon="☕", url_path="networking"),
-    st.Page(page_tools, title="Tools", icon="⚡", url_path="tools"),
-    st.Page(page_export, title="Export", icon="📤", url_path="export"),
-])
+JOBS_PAGE = st.Page(page_jobs, title="Jobs", icon="📋", url_path="jobs")
+TODOS_PAGE = st.Page(page_todos, title="To-Dos", icon="✅", url_path="todos")
+INTERVIEW_PAGE = st.Page(page_interview, title="Interview Prep", icon="🎤", url_path="interview")
+pg = st.navigation({
+    "": [st.Page(page_today, title="Today", icon="☀️", url_path="today", default=True)],
+    "Find": [
+        JOBS_PAGE,
+        st.Page(page_referrals, title="Referrals", icon="🤝", url_path="referrals"),
+        st.Page(page_sponsors, title="Sponsors", icon="🛂", url_path="sponsors"),
+    ],
+    "Apply & Track": [
+        st.Page(page_tracker, title="Tracker", icon="📊", url_path="tracker"),
+        TODOS_PAGE,
+        st.Page(page_networking, title="Networking", icon="☕", url_path="networking"),
+    ],
+    "Prepare": [
+        INTERVIEW_PAGE,
+        st.Page(page_skills, title="Skills Gap", icon="🎓", url_path="skills"),
+        st.Page(page_insights, title="Skills Insights", icon="📈", url_path="insights"),
+        st.Page(page_projects, title="Projects", icon="🛠️", url_path="projects"),
+        st.Page(page_fellowships, title="Fellowships", icon="🏆", url_path="fellowships"),
+    ],
+    "Tools": [
+        st.Page(page_tools, title="Tools", icon="⚡", url_path="tools"),
+        st.Page(page_export, title="Export", icon="📤", url_path="export"),
+    ],
+})
 pg.run()
 
 # --- FOOTER ---
-st.divider()
-st.caption(f"Source: SQLite ({DB_PATH.name}) | Last loaded: {datetime.now().strftime('%H:%M')}")
+flush_toasts()  # confirmations from saves this run that weren't followed by a rerun

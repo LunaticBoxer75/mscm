@@ -134,16 +134,25 @@ her last-good data read-only with a banner and refuses writes rather than droppi
 - Reads jobs from the committed `data/jobs_deploy.db`; her data from `data/user_data.json`
 - Access: Invite-only via Streamlit Cloud sharing settings
 
-### Pages (13)
-`📋 Jobs · 📊 Tracker · ✅ To-Dos · ☕ Networking · 🎤 Interview Prep · 🤝 Referrals · 🛂 Sponsors ·
-🎓 Skills Gap · 📈 Skills Insights · 🏆 Fellowships · 🛠️ Projects · ⚡ Tools · 📤 Export`
+### Pages (14, in sidebar sections)
+**☀️ Today** (landing) · **Find:** 📋 Jobs · 🤝 Referrals · 🛂 Sponsors · **Apply & Track:** 📊 Tracker ·
+✅ To-Dos · ☕ Networking · **Prepare:** 🎤 Interview Prep · 🎓 Skills Gap · 📈 Skills Insights ·
+🛠️ Projects · 🏆 Fellowships · **Tools:** ⚡ Tools · 📤 Export
 
 Pages, not `st.tabs`: tabs execute every tab's code on every click (3,871 elements / 2.6s per click);
 with `st.navigation` only the open page runs (0.01–0.25s warm).
 
-**Jobs** — 4 panels (Seattle FT, National FT, then internships as fallback). Button-per-row with
+**Today** — new-since-last-visit count (her visit dates live in `user_store` "meta", written at most
+once a day), a 12-job shortlist (full-time, not acted on, posted ≤14 days, max 2 per company,
+Seattle 8 / national 4), follow-ups due, high-priority to-dos, mock/STAR nudges.
+
+**Job rows** (shared `job_row()` on Today and Jobs): 🤖 = Claude read it (Pass 2); ties rank
+Claude-read first, then newest — never alphabetical. "Open ↗" never tracks; ✓ marks applied and queues
+a 7-day follow-up; ✕ dismisses everywhere. Scraped text is HTML-escaped and only http(s) links render
+(rows use `unsafe_allow_html`). Every save shows a "Saved — …" toast via `user_store.on_write`.
+
+**Jobs** — 4 panels (Seattle FT, National FT, then the two internship panels labelled fallback). Row-per-job with
 25-per-page pagination — `st.dataframe(on_select=...)` was unreliable and 500 buttons was slow.
-"📝 Open Posting" must NOT track; only "✅ Mark Applied" tracks and queues a 7-day follow-up.
 
 **Interview Prep** — 7 sub-tabs, driven by `content/*.json`:
 `🗺️ Loop Map · 🧩 Frameworks · 🧪 Case Bank · ⭐ STAR Stories · 🎯 Mock · 🏢 Company Prep · 📚 Resources`
