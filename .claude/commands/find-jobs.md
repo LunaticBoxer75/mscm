@@ -26,6 +26,7 @@ the same change (standing instruction from the user, 2026-09-27).
 | **Seattle area first (own tab), then big US metros, then the rest** | 2026-09-27 | `src/locations.py`; location points 15/13 Seattle, 11 remote, 10 big metro, 8 rest of WA, 5 elsewhere |
 | **She has 4 years of experience** + MSCM (June 2027) | 2026-09-27 | 5 years required is NOT a blocker; 6 → ≤65; 7+ → ≤40 |
 | **Nothing scoring under 70 is kept — including jobs Claude rated under 70** ("remove low-rated automatically, even the existing ones") | 2026-09-27 | Scraper skips <70; export deletes every <70 row except her tracked/dismissed jobs. Claude-rated ones go to `rejected_urls` (30 days) so the scraper doesn't re-add them |
+| **Closed postings are removed**, not left at their old keyword score | 2026-09-27 | Step 3b detects LinkedIn's expired redirect; step 7 deletes (tracked/dismissed kept) |
 | **Claude reads every Seattle FT job at 70+ and every national FT job at 85+** ("why have all the high scoring jobs not been ranked?") — LinkedIn descriptions fetched first | 2026-09-27 | Steps 3b + 4a; national 70-84 stays Pass-1-only |
 | **LinkedIn stays daily** despite being ~98% of scrape time | 2026-09-26 | Don't drop or down-sample it |
 | **Bellevue / Kirkland / Redmond not searched** — Seattle's radius covers them (they added 9 of 169) | 2026-09-26 | Their jobs still land in the Seattle tab |
@@ -157,8 +158,10 @@ from step 1 are the diagnostic.
 
 LinkedIn search results have no description, so without this Claude can't read most of either FT
 panel (on 2026-09-27: 1,275 unread Seattle FT jobs and 13,072 national FT jobs had no text). One
-request per posting with a 0.6-1.2s pause. Postings that come back empty (usually expired) go in
-`linkedin_fetch_misses` and are skipped next time. After 8 empties in a row it fetches a known-live
+request per posting with a 0.6-1.2s pause. **Closed postings** (LinkedIn redirects them with
+`expired_jd_redirect`) go in `expired_postings` and the export deletes them — before this, closed jobs
+kept their keyword score (e.g. an Amazon R2L Program Manager at 95) and sat unread at the top of the
+Seattle tab. Other empty responses go in `linkedin_fetch_misses` and are skipped next time. After 8 empties in a row it fetches a known-live
 posting: if that loads, it carries on (expired postings); if not, it stops (LinkedIn is blocking).
 Fetched rows are rescored with Pass 1 so its years/clearance/sponsorship rules can fire. Run four
 shards side by side (`--shard K/N` splits the queue with no overlap; ≈1.6-2 s per posting each):
@@ -375,7 +378,9 @@ their details.
 
 1. **90-day prune** — postings whose posting date (first-seen if undated) is over 90 days old.
 2. **Under-70 cleanup** — every row scoring below 70, including ones Claude read, EXCEPT jobs she
-   applied to or dismissed. Claude-rated ones are first recorded in `rejected_urls`, which the scraper
+   applied to or dismissed.
+3. **Closed postings** — rows in `expired_postings` (found in step 3b), same protection; URLs go to
+   `rejected_urls` as "closed posting". Claude-rated ones are first recorded in `rejected_urls`, which the scraper
    skips, so they can't come back and be re-read (entries expire after 30 days).
 
 Both protect her tracked/dismissed job_ids via `user_store`; with no token and no local snapshot the

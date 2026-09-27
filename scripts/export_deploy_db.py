@@ -85,6 +85,17 @@ def main():
         f"""DELETE FROM jobs WHERE COALESCE(score, 0) < 70 AND job_id NOT IN ({placeholders})""",
         tracked,
     ).rowcount
+    # Closed postings (LinkedIn's expired redirect, found by backfill_linkedin_descriptions.py):
+    # they can't be read or applied to, yet kept their keyword score at the top of the list.
+    src.execute("CREATE TABLE IF NOT EXISTS expired_postings (job_id TEXT PRIMARY KEY, job_url TEXT, at TEXT)")
+    src.execute(
+        f"""INSERT OR IGNORE INTO rejected_urls
+            SELECT job_url, 'closed posting', datetime('now') FROM jobs
+            WHERE job_id IN (SELECT job_id FROM expired_postings) AND job_url != ''
+            AND job_id NOT IN ({placeholders})""", tracked)
+    closed = src.execute(
+        f"""DELETE FROM jobs WHERE job_id IN (SELECT job_id FROM expired_postings)
+            AND job_id NOT IN ({placeholders})""", tracked).rowcount
     # The memory only needs to outlast the scraper's lookback (7 days); keep 30
     src.execute("DELETE FROM rejected_urls WHERE rejected_at < datetime('now', '-30 days')")
     src.commit()
@@ -92,6 +103,8 @@ def main():
         print(f"Pruned {pruned} jobs older than 90 days")
     if low:
         print(f"Removed {low} jobs scoring below 70")
+    if closed:
+        print(f"Removed {closed} closed postings")
 
     dst = sqlite3.connect(DST)
 

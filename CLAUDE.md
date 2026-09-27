@@ -47,7 +47,8 @@ python -m src.pipeline report    # Just generate report
   Claude-rated ones are remembered in `rejected_urls` (30 days) so the scraper can't re-add them.
 - **Claude reads every Seattle FT job at 70+ and national FT at 85+, LinkedIn included**:
   `scripts/backfill_linkedin_descriptions.py` fetches LinkedIn descriptions first (search returns none;
-  ~1.6-2s each). Expired postings (empty) are remembered in `linkedin_fetch_misses` and skipped.
+  ~1.6-2s each). **Closed postings** (LinkedIn's `expired_jd_redirect`) go in `expired_postings` and
+  the export deletes them; other empty responses are remembered in `linkedin_fetch_misses` and skipped.
 - **She has 4 years of experience** + an MSCM (June 2027). "5 years required" is not a blocker.
 
 ## Architecture

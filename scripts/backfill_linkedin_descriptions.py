@@ -5,7 +5,10 @@ one extra request per posting). That hides most of the Seattle panel from Pass 2
 on 2026-09-27, of 1,148 Seattle full-time jobs rated 80+, only 42 had a description.
 
 Fetches serially with a 0.6-1.2s pause, and stops early if LinkedIn stops returning
-descriptions (JobSpy swallows 429s and returns {}), so a block is reported, not hidden.
+descriptions (a 429 looks like an empty page), so a block is reported, not hidden.
+Closed postings are recognised by LinkedIn's `expired_jd_redirect` and recorded in
+`expired_postings`; the export deletes them (they'd otherwise keep their keyword
+score and sit at the top of the list unread).
 Rows that get a description are rescored with Pass 1 — its years / clearance /
 sponsorship rules can now fire. One DB writer: don't run it during a scrape.
 
@@ -27,13 +30,33 @@ from types import SimpleNamespace
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from bs4 import BeautifulSoup  # noqa: E402
 from jobspy.linkedin import LinkedIn  # noqa: E402
 from jobspy.model import DescriptionFormat  # noqa: E402
+from jobspy.util import markdown_converter, remove_attributes  # noqa: E402
 
 from src.quick_scorer import score_row  # noqa: E402
 
 DB = ROOT / "data" / "jobs.db"
 STOP_AFTER_EMPTY = 8  # consecutive empty responses → check whether LinkedIn is blocking us
+
+
+def _fetch(li, linkedin_id):
+    """(markdown description or None, closed?). Same page and parsing as JobSpy's
+    _get_job_details, which returns {} for closed postings and failed requests alike."""
+    try:
+        r = li.session.get(f"{li.base_url}/jobs/view/{linkedin_id}", timeout=10)
+    except Exception:
+        return None, False
+    if "expired_jd_redirect" in r.url:
+        return None, True
+    if r.status_code != 200 or "linkedin.com/signup" in r.url:
+        return None, False
+    div = BeautifulSoup(r.text, "html.parser").find(
+        "div", class_=lambda c: c and "show-more-less-html__markup" in c)
+    if div is None:
+        return None, False
+    return markdown_converter(remove_attributes(div).prettify(formatter="html")), False
 
 
 def _save(conn, updates):
@@ -55,6 +78,8 @@ def main():
     conn.execute("PRAGMA busy_timeout=60000")
     # Postings that returned nothing before (usually expired) — skip them next time
     conn.execute("CREATE TABLE IF NOT EXISTS linkedin_fetch_misses (job_id TEXT PRIMARY KEY, at TEXT)")
+    # Postings LinkedIn says are closed — the export deletes these rows
+    conn.execute("CREATE TABLE IF NOT EXISTS expired_postings (job_id TEXT PRIMARY KEY, job_url TEXT, at TEXT)")
     conn.commit()
     region_sql = "" if a.region == "all" else "AND region = ?"
     params = [a.min_score] + ([] if a.region == "all" else [a.region]) + [n, n, n, k, a.limit]
@@ -66,6 +91,7 @@ def main():
           AND score >= ? {region_sql}
           AND json_extract(score_breakdown, '$.scorer') IS NULL
           AND job_id NOT IN (SELECT job_id FROM linkedin_fetch_misses)
+          AND job_id NOT IN (SELECT job_id FROM expired_postings)
           AND ((CAST(job_id AS INTEGER) % ?) + ?) % ? = ?
           AND COALESCE(date_posted, substr(scraped_at, 1, 10)) >= date('now', '-90 days')
         ORDER BY score DESC LIMIT ?""", params).fetchall()
@@ -77,7 +103,7 @@ def main():
     probe = conn.execute("""SELECT job_url FROM jobs WHERE source='linkedin' AND LENGTH(description) > 500
                             ORDER BY scraped_at DESC LIMIT 1""").fetchone()
     probe_id = re.search(r"/jobs/view/(\d+)", probe[0]).group(1) if probe else None
-    misses = []
+    misses, expired = [], []
     got, empty_streak, updates, t0, saved, below = 0, 0, [], time.time(), 0, 0
     for i, (job_id, url, title, company, loc, jtype, posted, scraped, remote, sal, old) in enumerate(rows, 1):
         m = re.search(r"/jobs/view/(\d+)", url or "")
@@ -87,7 +113,10 @@ def main():
                         (job_id,)).fetchone()[0]:
             continue  # another copy (or an earlier run) already fetched it
         time.sleep(random.uniform(0.6, 1.2))
-        desc = (li._get_job_details(m.group(1)) or {}).get("description")
+        desc, closed = _fetch(li, m.group(1))
+        if closed:  # a real answer from LinkedIn, so not evidence of a block
+            expired.append((job_id, url, datetime.now().isoformat()))
+            continue
         if not desc:
             empty_streak += 1
             misses.append((job_id, datetime.now().isoformat()))
@@ -95,7 +124,7 @@ def main():
                 # Expired postings also come back empty; tell them apart from a block by
                 # fetching one we know is live.
                 time.sleep(1.5)
-                if probe_id and (li._get_job_details(probe_id) or {}).get("description"):
+                if probe_id and _fetch(li, probe_id)[0]:
                     print(f"  {STOP_AFTER_EMPTY} empty in a row, but a known-live posting still loads — "
                           f"expired postings, continuing", flush=True)
                     empty_streak = 0
@@ -119,9 +148,10 @@ def main():
     _save(conn, updates); saved += len(updates)
     with conn:
         conn.executemany("INSERT OR IGNORE INTO linkedin_fetch_misses VALUES (?, ?)", misses)
+        conn.executemany("INSERT OR IGNORE INTO expired_postings VALUES (?, ?, ?)", expired)
     conn.close()
-    print(f"Done: requested {i if rows else 0}, got {got} descriptions, {len(misses)} empty "
-          f"(skipped next time) in {time.time()-t0:.0f}s. "
+    print(f"Done: requested {i if rows else 0}, got {got} descriptions, {len(expired)} closed "
+          f"(export removes them), {len(misses)} empty (skipped next time) in {time.time()-t0:.0f}s. "
           f"Rescored with Pass 1: {below} now below 70 (description revealed years/clearance/etc).")
 
 
