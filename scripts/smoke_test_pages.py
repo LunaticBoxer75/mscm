@@ -38,5 +38,17 @@ for p in pages:
     print(f"{p:12} warm {warm:5.2f}s  elements {n:5}  {'OK' if not bad else 'BROKEN'}")
     for e in at.exception: print("   EXC:", str(e.value)[:300])
     for e in at.error: print("   ERR:", str(e.value)[:200])
+# The ATS bookmarklet is one minified line of JS; a stray // comment once silently
+# broke all of it. Syntax-check it when node is available.
+import shutil, subprocess, tempfile, urllib.parse
+if shutil.which("node"):
+    sys.path.insert(0, os.getcwd())
+    from src.bookmarklet import generate_bookmarklet_js
+    js = urllib.parse.unquote(generate_bookmarklet_js()[0][len("javascript:"):])
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(js)
+    ok = subprocess.run(["node", "--check", f.name], capture_output=True).returncode == 0
+    print(f"bookmarklet  {'OK' if ok else 'BROKEN (JavaScript syntax error)'}")
+    bad_total += 0 if ok else 1
 print("problems:", bad_total)
 sys.exit(1 if bad_total else 0)

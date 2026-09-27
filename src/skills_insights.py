@@ -1,10 +1,20 @@
 """Skills & certification insights — analyze what's demanded across all scored job descriptions.
 
 Categorizes into technical skills, management/soft skills, and certifications,
-returning frequency counts. Used by the dashboard Skills Insights tab.
+returning frequency counts. Used by the dashboard's Skills Insights and Skills Gap pages.
+
+Computed once per /find-jobs run from the FULL local DB (scripts/export_deploy_db.py
+stores the result in the deploy DB's `insights` table). Computing it on the dashboard
+was wrong twice over: the deploy DB truncates descriptions to 800 chars, and plain
+substring matching counted "excel" inside "excellent", "erp" inside "enterprise",
+"tms" inside "items" — Excel showed 73% (full text) or 11% (on the site); the real
+figure is ~41%.
 """
 
+import json
+import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 # Prefer the deploy DB (bundled on Streamlit Cloud), fall back to full local DB
@@ -77,18 +87,28 @@ HAS_SKILLS = {
 HAS_CERTS = {"Lean Six Sigma", "PMP"}
 
 
-def analyze_skills(min_score=60, limit=8000):
-    """Analyze job descriptions and return skill frequency breakdowns."""
-    conn = get_db()
+def _pattern(variants):
+    """Whole words, allowing a plural ending ("dashboards", "negotiations") — never inside
+    another word ("excel" must not match "excellent")."""
+    return re.compile("|".join(rf"(?<![\w/]){re.escape(v.strip())}(?:e?s)?(?![\w])" for v in variants))
+
+
+def analyze_skills(min_score=70, db_path=None):
+    """Skill frequency across descriptions of jobs scoring `min_score`+.
+
+    Pass `db_path` = the full data/jobs.db; the deploy copy's descriptions are
+    truncated. Rows without a real description (all LinkedIn rows) are excluded.
+    """
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) if db_path else get_db()
     rows = conn.execute("""
         SELECT description FROM jobs
-        WHERE score >= ? AND description IS NOT NULL AND description != ''
-        AND (dismissed IS NULL OR dismissed = 0)
-        LIMIT ?
-    """, (min_score, limit)).fetchall()
+        WHERE score >= ? AND LENGTH(description) > 200
+    """, (min_score,)).fetchall()
     conn.close()
 
-    descs = [r[0].lower() for r in rows]
+    # Undo markdown escapes first: descriptions are stored as markdown, so every
+    # hyphenated term is "cross\\-functional" and would never match.
+    descs = [re.sub(r"\\([^\w\s])", r"\1", r[0].lower()) for r in rows]
     n = len(descs)
     if n == 0:
         return {"total": 0, "technical": [], "soft": [], "certs": []}
@@ -96,7 +116,8 @@ def analyze_skills(min_score=60, limit=8000):
     def count_category(category):
         results = []
         for name, variants in category.items():
-            cnt = sum(1 for d in descs if any(v in d for v in variants))
+            rx = _pattern(variants)
+            cnt = sum(1 for d in descs if rx.search(d))
             results.append({
                 "skill": name,
                 "count": cnt,
@@ -115,4 +136,22 @@ def analyze_skills(min_score=60, limit=8000):
     for r in certs:
         r["has"] = r["skill"] in HAS_CERTS
 
-    return {"total": n, "technical": tech, "soft": soft, "certs": certs}
+    return {"total": n, "technical": tech, "soft": soft, "certs": certs,
+            "min_score": min_score, "computed_at": datetime.now().isoformat(timespec="minutes")}
+
+
+def store(conn, insights):
+    """Save into a DB's `insights` table (the deploy DB, at export time)."""
+    conn.execute("CREATE TABLE IF NOT EXISTS insights (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT OR REPLACE INTO insights VALUES ('skills', ?)", (json.dumps(insights),))
+
+
+def load_precomputed(db_path):
+    """The stored analysis, or None if this DB predates it."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        row = conn.execute("SELECT value FROM insights WHERE key='skills'").fetchone()
+        conn.close()
+        return json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError):
+        return None

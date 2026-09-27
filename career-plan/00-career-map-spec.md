@@ -10,14 +10,15 @@ I mined the full text of **3,576 real job descriptions** for your priority roles
 
 | Rank | Skill | % of PM job descriptions |
 |---|---|---|
-| 1 | Cross-functional | **88%** |
-| 2 | Communication | **74%** |
-| 3 | **Risk** | **72%** |
-| 4 | Stakeholder management | **66%** |
-| 5 | **Excel** | **62%** |
-| — | Budget | 42% |
-| — | Process improvement | 19% / PMP 19% |
-| — | **SQL** | **8%** |
+| 1 | Communication | **76%** |
+| 2 | **Risk** | **75%** |
+| 3 | Stakeholder management | **74%** |
+| 4 | Cross-functional | **62%** |
+| 5 | Budget | **45%** |
+| — | Process improvement 38% / PMP 24% | |
+| — | **Excel** | **25%** |
+| — | **SQL** | **7%** |
+> **Re-measured 2026-09-27** on 1,279 current PM descriptions, counting whole words only. The original count matched "excel" inside "excellent" and "cross" inside "across", which inflated Excel (62% → 25%) and cross-functional (88% → 62%). The conclusion is unchanged: your risk/stakeholder background is the top of demand, and Excel is still the most-requested *tool*.
 | — | Power BI / Python | **4% / 2%** |
 
 **Conclusion:** Your Uber risk/compliance/stakeholder background *is* the top of the demand list — it is your unfair advantage, not baggage. Tech skills (SQL/BI/Python) are **not** for clearing keyword filters (your background already clears them). They exist for exactly two purposes:
@@ -107,7 +108,7 @@ Depth calibrated to "fluent, can build a prototype, not an engineer."
 
 | Order | Skill | Depth target | Mode | Rationale |
 |---|---|---|---|---|
-| 1 | **Advanced Excel** (blended with SQL from wk 1) | Pivot, XLOOKUP, Power Query, dashboards | Deep | 62% of PM JDs; fastest credibility; builds on her pivot/trend base |
+| 1 | **Advanced Excel** (blended with SQL from wk 1) | Pivot, XLOOKUP, Power Query, dashboards | Deep | Most-requested tool (25% of PM JDs); fastest credibility; builds on her pivot/trend base |
 | 2 | **SQL** | JOINs, subqueries, CTEs, window functions | **Every line** | Her explicit ask; interview insurance |
 | 3 | **Power BI** | One real end-to-end dashboard | Working | Low JD %, high *portfolio* payoff (visual proof of insight) |
 | 4 | **Python** | pandas: read/clean/analyze/summarize | **Every line** (1st project), then ship-fast | Hold a BA-level Python conversation |

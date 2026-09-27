@@ -56,7 +56,7 @@ An interactive supply chain performance dashboard with:
 Run this Python script to create a realistic supply chain dataset:
 
 ```bash
-cd /Users/aniketsw/workspaces/mscm/projects/tableau-supply-chain-kpis
+cd tableau-supply-chain-kpis   # the folder you downloaded
 python generate_data.py
 ```
 

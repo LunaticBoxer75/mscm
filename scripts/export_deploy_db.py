@@ -15,8 +15,9 @@ which meant every push of this DB overwrote whatever she'd typed on the hosted
 dashboard. Keep those two files disjoint.
 """
 
-import sqlite3
 import os
+import sqlite3
+import sys
 from pathlib import Path
 
 DATA = Path(__file__).parent.parent / "data"
@@ -96,7 +97,11 @@ def main():
         search_term TEXT, search_category TEXT, scraped_at TEXT, score REAL,
         score_breakdown TEXT, scored_at TEXT, is_remote INTEGER DEFAULT 0,
         notified INTEGER DEFAULT 0, region TEXT DEFAULT 'seattle', dismissed INTEGER DEFAULT 0)""")
-    rows = src.execute("""
+    # Jobs she applied to always ship (not ones she dismissed), so Tracker rows keep details
+    from src import user_store
+    applied = [a["job_id"] for a in user_store.get("applications") if a.get("job_id")] or [""]
+    tracked_ph = ",".join("?" * len(applied))
+    rows = src.execute(f"""
         SELECT job_id, title, company, location, job_url,
                SUBSTR(description, 1, 800), job_type, date_posted,
                salary_min, salary_max, salary_currency, source, search_term,
@@ -104,14 +109,21 @@ def main():
                is_remote, notified, region, dismissed
         FROM jobs WHERE (dismissed IS NULL OR dismissed = 0)
         AND title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != ''
-        AND score >= 70
-    """).fetchall()
+        AND (score >= 70 OR job_id IN ({tracked_ph}))
+    """, applied).fetchall()
     dst.executemany("INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
 
     # Drop any aux tables left over from before her data moved to user_data.json.
     # Leaving them would let a stale copy shadow the real store.
     for tbl in ("applications", "coffee_chats", "todos", "interview_recs", "star_stories"):
         dst.execute(f"DROP TABLE IF EXISTS {tbl}")
+
+    # Skills demand, from FULL descriptions (the deploy copy truncates them to 800 chars)
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from src import skills_insights
+    ins = skills_insights.analyze_skills(min_score=70, db_path=SRC)
+    skills_insights.store(dst, ins)
+    print(f"Skills insights: {ins['total']:,} full descriptions analysed")
 
     dst.commit()
     dst.execute("VACUUM")

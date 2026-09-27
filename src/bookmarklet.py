@@ -1,7 +1,13 @@
 """Generate a JavaScript bookmarklet that auto-fills ATS application forms.
 
-When the user clicks the bookmarklet on any Workday/Greenhouse/Lever/iCIMS form,
-the JS scans for known field names and fills them with profile data.
+When the user clicks the bookmarklet on a Workday/Greenhouse/Lever/iCIMS form, it
+fills ONLY unambiguous identity/contact/education fields.
+
+Deliberately never filled — she answers these herself, because a wrong
+auto-answer costs more than typing it: work authorization, visa sponsorship,
+EEO / demographics, salary, start date. (An earlier version matched by substring,
+so "Ethnicity" got "Seattle" and "legally authorized to work in the United States?"
+got "WA".)
 """
 
 import json
@@ -12,97 +18,81 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
 def get_profile_data():
-    """Get Bhumika's profile data for form filling."""
+    """Values the bookmarklet may fill. Nothing visa/EEO/salary-related."""
     with open(CONFIG_DIR / "profile.json") as f:
         profile = json.load(f)
-
     candidate = profile.get("candidate", {})
+    full = candidate.get("name", "Bhumika Choudhary")
     return {
-        "firstName": "Bhumika",
-        "lastName": "Choudhary",
-        "fullName": candidate.get("name", "Bhumika Choudhary"),
+        "firstName": full.split()[0],
+        "lastName": full.split()[-1],
+        "fullName": full,
         "email": candidate.get("email", ""),
         "phone": candidate.get("phone", ""),
         "linkedin": f"https://www.linkedin.com/in/{candidate.get('linkedin', 'bhummika')}/",
         "city": "Seattle",
-        "state": "WA",
-        "country": "United States",
-        "currentLocation": candidate.get("location", "Hyderabad, India"),
-        "visaStatus": "F1 Student (STEM OPT eligible from June 2027)",
-        "needsSponsorship": "Yes",
-        "authorizedToWork": "Yes (will be after OPT EAD)",
-        "salaryExpectation": "100000",
-        "earliestStartDate": "2027-06-01",
         "school": "University of Washington - Foster School of Business",
         "degree": "Master of Supply Chain Management (MSCM)",
-        "graduationDate": "2027-05",
     }
 
 
-def generate_bookmarklet_js():
-    """Generate the JavaScript that auto-fills form fields."""
-    data = get_profile_data()
+# Answers she should give by hand (shown on the Tools page, never auto-filled).
+MANUAL_ANSWERS = {
+    "Will you now or in the future require sponsorship?": "Yes — F-1 student; will need H-1B sponsorship after OPT.",
+    "Work authorization": "F-1 student. OPT from ~June 2027 (12 months), then the 24-month STEM extension "
+                          "with an E-Verify employer.",
+    "Earliest start date": "June 2027 (after MSCM graduation, once the OPT EAD arrives).",
+    "Graduation": "MSCM, June 2027.",
+}
 
-    # Build field selectors mapping
-    js_template = """
+_JS = r"""
 (function(){
-  var data = %s;
-
-  var fieldMap = {
-    // Name
-    'firstName': data.firstName, 'first_name': data.firstName, 'fname': data.firstName, 'givenName': data.firstName,
-    'lastName': data.lastName, 'last_name': data.lastName, 'lname': data.lastName, 'familyName': data.lastName,
-    'fullName': data.fullName, 'full_name': data.fullName, 'name': data.fullName,
-    // Contact
-    'email': data.email, 'emailAddress': data.email, 'email_address': data.email,
-    'phone': data.phone, 'phoneNumber': data.phone, 'phone_number': data.phone, 'mobile': data.phone,
-    'linkedin': data.linkedin, 'linkedinUrl': data.linkedin, 'linkedin_url': data.linkedin, 'linkedInProfile': data.linkedin,
-    // Location
-    'city': data.city, 'state': data.state, 'country': data.country,
-    'currentCity': data.city, 'current_city': data.city,
-    // Visa
-    'visa': data.visaStatus, 'visaStatus': data.visaStatus, 'workAuthorization': data.authorizedToWork,
-    'requireSponsorship': data.needsSponsorship, 'sponsorship': data.needsSponsorship,
-    'authorized': data.authorizedToWork,
-    // Misc
-    'salary': data.salaryExpectation, 'salaryExpectation': data.salaryExpectation, 'expectedSalary': data.salaryExpectation,
-    'startDate': data.earliestStartDate, 'availability': data.earliestStartDate,
-    'school': data.school, 'university': data.school, 'institution': data.school,
-    'degree': data.degree, 'major': data.degree,
-  };
-
+  var D = %(data)s;
+  var SENSITIVE = /sponsor|authori[sz]|visa|citizen|immigra|gender|sex\b|race|ethnic|hispanic|latino|veteran|disab|pronoun|salary|compensation|pay\b|relocat|start date|emergency|reference|company|employer|manager|supervisor|previous|former/;
+  function tokens(s){ return (s||'').replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); }
+  function has(t, w){ return t.indexOf(w) !== -1; }
+  function pick(el){
+    var ac = (el.getAttribute('autocomplete')||'').toLowerCase();
+    var t = tokens(el.name).concat(tokens(el.id));
+    var lbl = ((el.labels && el.labels[0] && el.labels[0].innerText) || el.getAttribute('aria-label') || '').toLowerCase();
+    if (SENSITIVE.test(lbl) || SENSITIVE.test(t.join(' '))) return null;
+    var lt = tokens(lbl);
+    if (ac === 'given-name' || (has(t,'first') && has(t,'name')) || has(t,'fname') || has(t,'givenname')) return D.firstName;
+    if (ac === 'family-name' || (has(t,'last') && has(t,'name')) || has(t,'lname') || has(t,'surname') || has(t,'familyname')) return D.lastName;
+    if (ac === 'email' || has(t,'email') || has(lt,'email')) return D.email;
+    if (ac.indexOf('tel') === 0 || has(t,'phone') || has(t,'mobile') || has(lt,'phone')) return D.phone;
+    if (has(t,'linkedin') || has(lt,'linkedin')) return D.linkedin;
+    if (ac === 'address-level2' || (has(t,'city') && t.length <= 3)) return D.city;
+    if (has(t,'school') || has(t,'university') || has(t,'institution')) return D.school;
+    if (has(t,'degree')) return D.degree;
+    if (ac === 'name' || (t.length === 1 && t[0] === 'name') || (has(t,'full') && has(t,'name'))) return D.fullName;
+    return null;
+  }
+  function setVal(el, v){
+    var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+    ['input','change','blur'].forEach(function(e){ el.dispatchEvent(new Event(e, {bubbles:true})); });
+  }
   var filled = 0;
-  var inputs = document.querySelectorAll('input, textarea, select');
-  inputs.forEach(function(el){
-    var name = (el.name || el.id || '').toLowerCase();
-    var aria = (el.getAttribute('aria-label') || '').toLowerCase();
-    var label = '';
-    var lblEl = el.labels && el.labels[0];
-    if (lblEl) label = lblEl.innerText.toLowerCase();
-    var allText = name + ' ' + aria + ' ' + label;
-
-    Object.keys(fieldMap).forEach(function(key){
-      if (allText.indexOf(key.toLowerCase()) !== -1 && !el.value) {
-        var val = fieldMap[key];
-        if (val) {
-          el.value = val;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('blur', { bubbles: true }));
-          filled++;
-        }
-      }
-    });
+  document.querySelectorAll('input, textarea').forEach(function(el){
+    var type = (el.type||'text').toLowerCase();
+    if (['hidden','radio','checkbox','file','submit','button','password'].indexOf(type) !== -1) return;
+    if (el.value || el.disabled || el.readOnly || el.offsetParent === null) return;
+    var v = pick(el);
+    if (v) { setVal(el, v); filled++; }
   });
-
-  alert('MSCM Auto-Fill: filled ' + filled + ' fields. Review before submitting!');
+  alert('MSCM Auto-Fill: filled ' + filled + ' fields.\n\nNOT filled on purpose: sponsorship, work authorization, EEO, salary, start date. Answer those yourself. Review everything before submitting.');
 })();
-""" % json.dumps(data)
+"""
 
-    # Minify slightly and URL-encode
-    minified = " ".join(js_template.split())
-    encoded = "javascript:" + urllib.parse.quote(minified, safe="(){}[],;:.!?'+=&|<>%@/")
-    return encoded, js_template
+
+def generate_bookmarklet_js():
+    """Returns (javascript: URL, readable source). The source has no // comments, so
+    it survives being minified onto one line."""
+    source = _JS % {"data": json.dumps(get_profile_data())}
+    minified = " ".join(source.split())
+    encoded = "javascript:" + urllib.parse.quote(minified, safe="(){}[],;:.!?'+=&|<>%@/*$^\\")
+    return encoded, source
 
 
 def get_bookmarklet_html():

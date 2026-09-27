@@ -11,7 +11,9 @@ dashboard (Streamlit Cloud's filesystem is ephemeral).
 
 import html
 import json
+import re
 import sqlite3
+import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -97,7 +99,15 @@ def load_applications():
         conn, params=ids,
     )
     conn.close()
-    df = pd.DataFrame(apps).merge(jobs, on="job_id", how="left")
+    df = pd.DataFrame(apps)
+    snap = df.copy()  # her record, including any saved job details
+    df = df.drop(columns=[c for c in ("title", "company", "location", "job_url") if c in df.columns]).merge(
+        jobs, on="job_id", how="left")
+    # A tracked job can leave the published DB (e.g. rescored below 70); use the copy
+    # saved on her application record so the row never goes blank.
+    for col in ("title", "company", "location", "job_url"):
+        if col in snap.columns:
+            df[col] = df[col].fillna(snap[col])
     order = {"interviewing": 1, "applied": 2, "offer": 3}
     df["_rank"] = df["status"].map(lambda s: order.get(s, 4))
     return df.sort_values(["_rank", "score"], ascending=[True, False]).drop(columns=["_rank"])
@@ -122,6 +132,14 @@ def update_application(job_id, status, notes=None, follow_up_date=None):
         fields["notes"] = notes
     if follow_up_date is not None:
         fields["follow_up_date"] = follow_up_date
+    if not (existing or {}).get("title"):
+        # Keep a copy of the job on her record — the posting may later leave the DB.
+        conn = get_db()
+        row = conn.execute("SELECT title, company, location, job_url FROM jobs WHERE job_id = ?",
+                           (job_id,)).fetchone()
+        conn.close()
+        if row:
+            fields.update(title=row[0], company=row[1], location=row[2], job_url=row[3])
     if status == "applied" and not (existing or {}).get("applied_date"):
         fields["applied_date"] = datetime.now().isoformat()
     if existing:
@@ -188,42 +206,6 @@ def get_comparable_jobs(current_job, limit=3):
     return df.head(limit)
 
 
-SKILLS_CHECK = {
-    "Python": ["python", "pandas", "numpy"], "Tableau": ["tableau"],
-    "Power BI": ["power bi", "powerbi"], "SAP/ERP": ["sap", "s/4hana", "erp"],
-    "SQL": ["sql", "mysql", "postgresql"], "Excel Advanced": ["vba", "macros", "power query"],
-    "Forecasting": ["forecasting", "demand planning", "s&op"],
-    "Procurement": ["procurement", "sourcing", "rfp"],
-    "Logistics": ["logistics", "freight", "3pl", "wms"],
-    "Six Sigma": ["lean", "six sigma", "kaizen"],
-    "Project Management": ["pmp", "agile", "scrum"],
-}
-HAS_SKILLS = {"SQL", "Six Sigma", "Project Management", "Excel Advanced"}
-
-
-@st.cache_data(show_spinner=False)
-def skills_gap_table(descriptions):
-    """% of descriptions requesting each skill. Cached: it used to rescan every
-    description on every click (~1.1s of a 2.6s rerun).
-
-    Word boundaries, never substrings — "lean" matched "cleaning", "erp" matched
-    "enterprise", "sap" matched "asap".
-    """
-    import re
-    patterns = {
-        skill: re.compile("|".join(rf"(?<![\w/]){re.escape(k)}(?![\w])" for k in kws))
-        for skill, kws in SKILLS_CHECK.items()
-    }
-    lowered = [d.lower() for d in descriptions]
-    results = []
-    for skill, pat in patterns.items():
-        count = sum(1 for d in lowered if pat.search(d))
-        pct = round(count / len(lowered) * 100, 1) if lowered else 0
-        results.append({"Skill": skill, "Requested In": f"{pct}%",
-                        "Has It": "✅" if skill in HAS_SKILLS else "❌ GAP", "pct": pct})
-    return sorted(results, key=lambda x: x["pct"], reverse=True)
-
-
 # --- SHARED UI HELPERS ---
 
 # Save confirmations: user_store calls this after every successful write. Queued
@@ -282,6 +264,16 @@ def visit_baseline():
         baseline = (rec or {}).get("prev")  # read-only mode: still show counts
     st.session_state["visit_baseline"] = baseline
     return baseline
+
+
+def save(fn, *args, **kwargs):
+    """Run a write to her store; on failure show why instead of a traceback. Returns success."""
+    try:
+        fn(*args, **kwargs)
+        return True
+    except user_store.StoreError as e:
+        st.error(f"Couldn't save — {e}. Nothing was changed; try again in a moment.")
+        return False
 
 
 def _safe_url(u):
@@ -664,9 +656,12 @@ def page_jobs():
                             st.success("Marked applied + 7-day follow-up queued!")
                             st.rerun()
                 with act_cols[2]:
-                    connect_msg = f"Hi [Name],\n\nI'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!\n\nBest,\nBhumika"
-                    st.code(connect_msg, language=None)
-                    st.caption("Copy → replace [Name] → paste into LinkedIn")
+                    from src.outreach import referral_message, referral_note
+                    note = referral_note(title, company)
+                    st.code(note, language=None)
+                    st.caption(f"Connection note ({len(note)}/300 chars) — replace [Name]. "
+                               "For a DM or email with your resume attached:")
+                    st.code(referral_message(title, company), language=None)
 
                 st.markdown("#### 🤝 Find People at " + company)
                 role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
@@ -731,21 +726,39 @@ def page_jobs():
                             st.caption(f"DOCX generation unavailable: {e}")
 
 # === TAB: TRACKER ===
+TRACK_STATUSES = ["applied", "interviewing", "offer", "rejected", "skipped"]
+
+
 def page_tracker():
-    st.subheader("Application Pipeline")
+    st.subheader("📊 Application Pipeline")
     apps = load_applications()
     if apps.empty:
-        st.info("No applications tracked yet. Select a job → Update Status.")
-    else:
-        statuses = ["applied", "interviewing", "offer", "rejected", "skipped"]
-        status_counts = apps["status"].value_counts() if "status" in apps.columns else pd.Series()
-        cols = st.columns(5)
-        emojis = ["📨", "🎤", "🎉", "❌", "⏭️"]
-        for col, status, emoji in zip(cols, statuses, emojis):
-            col.metric(f"{emoji} {status.title()}", status_counts.get(status, 0))
-        st.divider()
-        display_cols = [c for c in ["status", "title", "company", "score", "applied_date", "notes"] if c in apps.columns]
-        st.dataframe(apps[display_cols], hide_index=True, width="stretch")
+        st.info("No applications tracked yet — use ✓ on any job, or Track on its detail panel.")
+        return
+    counts = apps["status"].value_counts()
+    for col, s_, emoji in zip(st.columns(5), TRACK_STATUSES, ["📨", "🎤", "🎉", "❌", "⏭️"]):
+        col.metric(f"{emoji} {s_.title()}", int(counts.get(s_, 0)))
+    st.divider()
+    for _, a in apps.iterrows():
+        jid = a["job_id"]
+        title = a.get("title") if isinstance(a.get("title"), str) else "(posting no longer listed)"
+        head = f"**{html.escape(title)}** @ {html.escape(str(a.get('company') or ''))} — {a.get('status')}"
+        with st.expander(head, expanded=a.get("status") == "interviewing"):
+            url = _safe_url(a.get("job_url"))
+            if url:
+                st.markdown(f"[Open posting ↗]({url})")
+            with st.form(f"trk_{jid}"):
+                c1, c2 = st.columns([1, 1])
+                cur = a.get("status") if a.get("status") in TRACK_STATUSES else "applied"
+                new_status = c1.selectbox("Status", TRACK_STATUSES, index=TRACK_STATUSES.index(cur))
+                fu = pd.to_datetime(a.get("follow_up_date"), errors="coerce")
+                follow = c2.date_input("Follow up by", value=None if pd.isna(fu) else fu.date())
+                notes = st.text_area("Notes", value=a.get("notes") if isinstance(a.get("notes"), str) else "",
+                                     height=70)
+                if st.form_submit_button("Save"):
+                    update_application(jid, new_status, notes=notes,
+                                       follow_up_date=follow.isoformat() if follow else "")
+                    st.rerun()
 
 # === TAB: REFERRALS ===
 def page_referrals():
@@ -754,23 +767,37 @@ def page_referrals():
     if scored.empty:
         st.info("No scored jobs yet.")
     else:
-        import urllib.parse
-        top_jobs = scored[scored["score"] >= 75].head(20)
+        from src.sponsor_data import lookup_sponsor
+        st.caption("Jobs you've applied to first, then your strongest full-time matches. Staffing "
+                   "agencies and U.S.-person-only employers are left out — a referral can't fix those.")
+        apps = applications_map()
+        active = {j for j, a in apps.items() if a.get("status") in ("applied", "interviewing")}
+        pool = scored[(scored["job_type"] != "internship") & (~scored["company_staffing"].fillna(False))]
+        pool = pool[~pool["company"].map(lambda c: bool((lookup_sponsor(c) or {}).get("us_only")))]
+        top_jobs = pd.concat([pool[pool["job_id"].isin(active)],
+                              pool[(pool["score"] >= 75) & (~pool["job_id"].isin(active))]]).head(40)
         seen_companies = set()
         for _, job in top_jobs.iterrows():
             company = str(job.get("company", "") or "")
             if not company or company in seen_companies:
                 continue
+            if len(seen_companies) >= 15:
+                break
             seen_companies.add(company)
             title = str(job.get("title", "") or "")
-            role_kw = title.lower().replace("sr.", "").replace("senior", "").strip()
-            with st.expander(f"**{company}** — {title} · {job.get('location', '')}"):
+            # Search for the role, not the posting's exact wording: drop "(Starlink Aviation)",
+            # "Sr./Senior", roman-numeral levels
+            role_kw = re.sub(r"\(.*?\)|\b(sr|senior|jr|junior|i{1,3}|iv|lead)\b", " ", title.lower().replace(".", " "))
+            role_kw = " ".join(re.split(r"[,\-–|/]", role_kw)[0].split()[:4])
+            tag = " · ✅ applied" if job["job_id"] in active else ""
+            with st.expander(f"**{company}** — {title} · {job.get('location', '')}{tag}"):
                 ref_cols = st.columns(4)
                 ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", width="stretch")
-                msg = f"Hi [Name], I'm Bhumika — incoming MSCM student at UW Foster with 3 years of operations/risk experience at Uber. I'm very interested in the {title} role at {company} and would really appreciate a referral if you think my background could be a fit. I've attached my resume for reference. Thank you!"
+                from src.outreach import referral_note
+                msg = referral_note(title, company)
                 st.code(msg, language=None)
 
 # === TAB: SPONSORS ===
@@ -781,19 +808,24 @@ def page_sponsors():
     from src.sponsor_data import get_top_sponsors_for_scm
 
     top_sponsors = get_top_sponsors_for_scm()
-    volume_emoji = {"very_high": "🟢", "high": "🟢", "medium": "🟡", "low": "🟡"}
+    fy = top_sponsors[0]["fiscal_year"] if top_sponsors else ""
+    st.markdown(f"**{len(top_sponsors)} supply-chain employers**, ranked by actual USCIS H-1B approvals "
+                f"(FY{fy}) — apply directly at their careers pages, even if not in our scrape:")
 
-    st.markdown(f"**{len(top_sponsors)} target companies** — apply directly at their careers pages, even if not in our scrape:")
-    st.markdown("")
-
-    # 3-column layout
     cols = st.columns(3)
-    for i, sponsor in enumerate(top_sponsors):
+    for i, sp in enumerate(top_sponsors):
+        n = sp["approvals"]
+        if sp["us_only"]:
+            emoji, note = "🔴", "Most roles need U.S.-person status / clearance"
+        elif n:
+            emoji = "🟢" if n >= 100 else "🟡"
+            note = f"{n:,} H-1B approvals FY{fy}"
+        else:
+            emoji, note = "⚪", f"Not in USCIS's FY{fy} top 1,000 — check each posting"
         with cols[i % 3]:
-            emoji = volume_emoji.get(sponsor["h1b_volume"], "⚪")
-            careers_url = f"https://www.google.com/search?q={sponsor['company'].replace(' ', '+')}+careers+supply+chain"
-            st.markdown(f"{emoji} **[{sponsor['company']}]({careers_url})**")
-            st.caption(f"H1B volume: {sponsor['h1b_volume'].replace('_',' ')}")
+            q = urllib.parse.quote_plus(f"{sp['company']} careers supply chain")
+            st.markdown(f"{emoji} **[{sp['company']}](https://www.google.com/search?q={q})**")
+            st.caption(note)
 
     # Verified top sponsors from USCIS data
     st.divider()
@@ -811,7 +843,7 @@ def page_sponsors():
             vc = st.columns(2)
             for i, (norm, d) in enumerate(top40):
                 with vc[i % 2]:
-                    careers = f"https://www.google.com/search?q={d['employer'].replace(' ', '+')}+careers"
+                    careers = "https://www.google.com/search?q=" + urllib.parse.quote_plus(f"{d['employer']} careers")
                     st.markdown(f"{i+1}. **[{d['employer'].title()}]({careers})** — {d['h1b_approvals']:,} approvals")
             st.caption("Note: Top nationally = mostly tech/consulting. Use the SCM-focused list above for role-relevant targets. Refresh with `python scripts/refresh_h1b_sponsors.py`.")
     except Exception as e:
@@ -827,32 +859,55 @@ def page_sponsors():
     """)
 
 # === TAB: SKILLS GAP ===
+@st.cache_data(ttl=600, show_spinner=False)
+def load_skill_insights():
+    """Skill demand computed at export time from FULL descriptions (see skills_insights).
+    Falls back to computing from this DB — approximate, since the deploy copy truncates."""
+    from src import skills_insights
+    ins = skills_insights.load_precomputed(DB_PATH)
+    if ins:
+        return ins, True
+    return skills_insights.analyze_skills(min_score=70, db_path=DB_PATH), False
+
+
+def _skills_caption(ins, exact):
+    src = (f"{ins['total']:,} full job descriptions scoring {ins.get('min_score', 70)}+, "
+           f"computed {str(ins.get('computed_at', ''))[:10]}") if exact else \
+          f"{ins['total']:,} descriptions — ⚠️ approximate (truncated text); refreshes on the next data publish"
+    st.caption(f"Based on {src}. LinkedIn postings have no description and aren't counted.")
+
+
 def page_skills():
-    scored = load_jobs(min_score=60)
-    st.subheader("Skills Gap Analysis")
-    if scored.empty or len(scored) < 5:
-        st.info("Need at least 5 scored jobs.")
-    else:
-        results = skills_gap_table(tuple(scored[scored["score"] >= 55]["description"].dropna()))
-        st.dataframe(pd.DataFrame(results).drop(columns=["pct"]), hide_index=True, width="stretch")
+    st.subheader("🎓 Skills Gap")
+    ins, exact = load_skill_insights()
+    if not ins["total"]:
+        st.info("No job descriptions to analyze yet.")
+        return
+    _skills_caption(ins, exact)
+    gaps = sorted([r for r in ins["technical"] + ins["certs"] if not r.get("has") and r["pct"] >= 2],
+                  key=lambda r: -r["pct"])
+    have = sorted([r for r in ins["technical"] + ins["soft"] + ins["certs"] if r.get("has")],
+                  key=lambda r: -r["pct"])
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### ❌ Gaps to close (by demand)")
+        st.dataframe(pd.DataFrame([{"Skill": r["skill"], "Asked for in": f"{r['pct']}%"} for r in gaps]),
+                     hide_index=True, width="stretch")
+    with c2:
+        st.markdown("#### ✅ You already have")
+        st.dataframe(pd.DataFrame([{"Skill": r["skill"], "Asked for in": f"{r['pct']}%"} for r in have]),
+                     hide_index=True, width="stretch")
+    st.caption("Full demand tables are on Skills Insights; Projects has build guides for the top gaps.")
 
 # === TAB: SKILLS INSIGHTS ===
 def page_insights():
-    scored = load_jobs(min_score=60)
     st.subheader("📈 Skills & Certifications Demand")
-    st.caption("What employers ask for across all relevant job descriptions (score 60+). ✅ = Bhumika already has it, ❌ = gap to build.")
-
-    from src.skills_insights import analyze_skills
-
-    @st.cache_data(ttl=600)
-    def _cached_skills():
-        return analyze_skills(min_score=60)
-
-    insights = _cached_skills()
+    insights, exact = load_skill_insights()
     if insights["total"] == 0:
         st.info("No scored jobs to analyze yet.")
     else:
-        st.markdown(f"_Analyzed **{insights['total']:,}** job descriptions_")
+        _skills_caption(insights, exact)
+        st.caption("✅ = Bhumika already has it, ❌ = gap to build.")
 
         def render_skill_table(items, title):
             st.markdown(f"#### {title}")
@@ -894,11 +949,13 @@ def page_fellowships():
     if opp_path.exists():
         opps = _json.loads(opp_path.read_text())
 
+        # LDPs first: they're the only full-time pipelines here (full-time is the priority)
+        # and they recruit Aug-Nov for the following year.
         section_meta = [
+            ("rotational_ldps", "🔄 Rotational / Leadership Development Programs — full-time, recruiting now"),
+            ("fellowships", "🎖️ Fellowships & Scholarships"),
             ("case_competitions", "🎓 Case Competitions"),
             ("hackathons_datathons", "💻 Hackathons & Datathons"),
-            ("rotational_ldps", "🔄 Rotational / Leadership Development Programs"),
-            ("fellowships", "🎖️ Fellowships & Scholarships"),
             ("associations", "🤝 Professional Associations"),
         ]
 
@@ -909,7 +966,8 @@ def page_fellowships():
             st.markdown(f"### {title}")
             for o in items:
                 f1 = o.get("f1_ok")
-                flag = "🟢" if f1 else "🟡"
+                not_viable = "not viable" in (o.get("tier") or "").lower()
+                flag = "🔴" if not_viable else ("🟢" if f1 else "🟡")
                 tier = f" · _{o['tier']}_" if o.get("tier") else ""
                 with st.expander(f"{flag} **{o['name']}** — {o['org']}{tier}"):
                     st.markdown(f"**Timeline:** {o.get('timeline','—')}")
@@ -920,34 +978,55 @@ def page_fellowships():
             st.markdown("")
 
         st.divider()
-        st.info("🟢 = F1-friendly / no visa barrier · 🟡 = verify sponsorship per posting. "
-                "**Tip:** Frame applications around STEM-OPT eligibility (3-yr work authorization, no employer petition) to bypass many 'no sponsorship' filters.")
+        st.info("🟢 = F1-friendly · 🟡 = verify sponsorship per posting · 🔴 = generally not viable "
+                "(U.S.-person / clearance roles).\n\n"
+                "**On sponsorship questions:** answer \"Yes\" to \"will you now or in the future require "
+                "sponsorship?\" — you'll need an H-1B after OPT. Do mention that your STEM degree gives up to "
+                "3 years of OPT work authorization first; the 24-month STEM extension needs an E-Verify "
+                "employer and a signed I-983 training plan.")
     else:
         st.info("Opportunities data not found.")
 
 # === TAB: PROJECTS ===
 def page_projects():
-    st.subheader("Portfolio Projects")
-    if PROJECTS_DIR.exists():
-        for pdir in sorted(PROJECTS_DIR.iterdir()):
-            if pdir.is_dir() and (pdir / "README.md").exists():
-                content = (pdir / "README.md").read_text()
-                title = content.split("\n")[0].replace("# ", "")
-                with st.expander(f"📁 {title}"):
-                    st.markdown(content[:5000])
-                    st.download_button("Download Guide", content, f"{pdir.name}.md", "text/markdown", key=f"dl_{pdir.name}")
-    else:
-        st.info("No projects yet. Run `/generate-projects`.")
+    st.subheader("🛠️ Portfolio Projects")
+    plan = Path(__file__).parent / "career-plan" / "02-projects.md"
+    if plan.exists():
+        st.markdown("Your portfolio plan (10 projects: 3 flagship + 7 light) lives in the career plan. "
+                    "It supersedes the older starter guides below.")
+        with st.expander("📋 Portfolio plan — the 10 projects", expanded=True):
+            # Relative links between career-plan pages don't resolve here; show their text
+            st.markdown(re.sub(r"\[([^\]]+)\]\((?!https?://)[^)]+\)", r"\1", plan.read_text()))
+        st.download_button("Download the portfolio plan", plan.read_text(), "portfolio-plan.md", "text/markdown")
+        st.divider()
+
+    st.markdown("#### Starter build guides")
+    st.caption("Step-by-step technical guides. Download a guide's files to run it on your laptop.")
+    if not PROJECTS_DIR.exists():
+        st.info("No starter guides yet.")
+        return
+    for pdir in sorted(d for d in PROJECTS_DIR.iterdir() if d.is_dir() and (d / "README.md").exists()):
+        content = (pdir / "README.md").read_text()
+        title = content.split("\n")[0].replace("# ", "")
+        with st.expander(f"📁 {title}"):
+            st.markdown(content)  # the whole guide — it used to be cut at 5,000 chars mid-code-block
+            files = [f for f in sorted(pdir.iterdir()) if f.is_file()]
+            for col, f in zip(st.columns(max(len(files), 1)), files):
+                col.download_button(f"⬇ {f.name}", f.read_bytes(), f.name, key=f"dl_{pdir.name}_{f.name}")
 
 # === TAB: TO-DOS ===
 def page_todos():
     st.subheader("✅ To-Dos & Action Items")
     st.caption("Auto-imports action items from coffee chats. Add your own too.")
 
-    from src.todos import get_todos, add_todo, set_status, import_coffee_chat_actions, seed_defaults
+    from src.todos import add_todo, delete_todo, get_todos, import_coffee_chat_actions, set_status
 
-    # Sync latest coffee chat actions
-    import_coffee_chat_actions()
+    # Pull in new coffee-chat action items (one batched write; none if nothing is new).
+    # If GitHub is unreachable, skip quietly — the page still works read-only.
+    try:
+        import_coffee_chat_actions()
+    except user_store.StoreError:
+        pass
 
     todos = get_todos()
     open_todos = [t for t in todos if t["status"] == "open"]
@@ -968,10 +1047,12 @@ def page_todos():
         for cat, items in sorted(cats.items()):
             st.markdown(f"**{cat.replace('-', ' ').title()}**")
             for t in items:
-                cols = st.columns([0.5, 6, 1.2])
+                cols = st.columns([0.5, 6, 0.5])
                 with cols[0]:
-                    if st.button("✓", key=f"done_{t['id']}", help="Mark done"):
-                        set_status(t["id"], "done")
+                    if st.button("✓", key=f"done_{t['id']}", help="Mark done") and save(set_status, t["id"], "done"):
+                        st.rerun()
+                with cols[2]:
+                    if st.button("🗑", key=f"del_{t['id']}", help="Delete") and save(delete_todo, t["id"]):
                         st.rerun()
                 with cols[1]:
                     pri = t.get("priority", "medium")
@@ -985,8 +1066,7 @@ def page_todos():
             for t in done_todos:
                 dc = st.columns([6, 1])
                 dc[0].markdown(f"~~{t['item']}~~")
-                if dc[1].button("↩", key=f"reopen_{t['id']}", help="Reopen"):
-                    set_status(t["id"], "open")
+                if dc[1].button("↩", key=f"reopen_{t['id']}", help="Reopen") and save(set_status, t["id"], "open"):
                     st.rerun()
 
     st.divider()
@@ -996,10 +1076,13 @@ def page_todos():
         tc1, tc2 = st.columns(2)
         new_cat = tc1.text_input("Category", value="general")
         new_pri = tc2.selectbox("Priority", ["high", "medium", "low"], index=1)
-        if st.form_submit_button("Add") and new_item:
-            add_todo(new_item, category=new_cat, priority=new_pri)
-            st.success("Added!")
-            st.rerun()
+        if st.form_submit_button("Add"):
+            if not new_item.strip():
+                st.warning("Type a task first.")
+            elif any(x.get("item") == new_item.strip() for x in todos):
+                st.info("That's already on your list.")
+            elif save(add_todo, new_item.strip(), category=new_cat, priority=new_pri):
+                st.rerun()
 
 # === TAB: INTERVIEW PREP ===
 def page_interview():
@@ -1421,16 +1504,20 @@ def page_networking():
     st.subheader("☕ Coffee Chats & Networking Log")
     st.caption("Log conversations, capture takeaways, and track action items from every chat.")
 
-    from src.networking import get_all_chats, get_all_action_items, log_chat
+    from src.networking import delete_chat, get_all_action_items, get_all_chats, log_chat
+    from src.todos import get_todos
 
     chats = get_all_chats()
 
     # Action items rollup across all chats
     action_items = get_all_action_items()
     if action_items:
-        with st.expander(f"✅ All Action Items ({len(action_items)})", expanded=True):
+        done = {x.get("item") for x in get_todos("done")}
+        with st.expander(f"✅ All Action Items ({len(action_items)}) — tracked in To-Dos"):
             for ai in action_items:
-                st.markdown(f"- {ai['item']}  \n  <span style='font-size:0.8em;color:#888'>from {ai['from']} · {ai['date']}</span>", unsafe_allow_html=True)
+                mark = "~~" if ai["item"] in done else ""
+                st.markdown(f"- {mark}{html.escape(ai['item'])}{mark}  \n  <span style='font-size:0.8em;color:#888'>"
+                            f"from {html.escape(str(ai['from']))} · {ai['date']}</span>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -1456,6 +1543,8 @@ def page_networking():
                     st.markdown(chat["action_items"])
                 if chat.get("follow_up_date"):
                     st.info(f"Follow up by: {chat['follow_up_date']}")
+                if st.button("🗑 Delete this chat", key=f"del_chat_{chat['id']}") and save(delete_chat, chat["id"]):
+                    st.rerun()
 
     # Add new chat form
     st.divider()
@@ -1467,18 +1556,20 @@ def page_networking():
         fc3, fc4 = st.columns(2)
         person_company = fc3.text_input("Company")
         linkedin_url = fc4.text_input("LinkedIn URL (optional)")
-        chat_date = st.text_input("Date (YYYY-MM-DD)", value=datetime.now().strftime("%Y-%m-%d"))
+        chat_date = st.date_input("Date", value=date.today())
         how_connected = st.text_input("How did you connect? (optional)")
         summary = st.text_area("Summary of conversation")
         key_takeaways = st.text_area("Key takeaways (one per line)")
         action_items = st.text_area("Action items (one per line)")
-        follow_up_date = st.text_input("Follow-up date (optional)")
+        follow_up_date = st.date_input("Follow-up date (optional)", value=None)
         submitted = st.form_submit_button("Save Chat")
-        if submitted and person_name:
-            log_chat(person_name, person_role, person_company, chat_date, linkedin_url,
-                     how_connected, summary, key_takeaways, action_items, follow_up_date)
-            st.success(f"Logged chat with {person_name}!")
-            st.rerun()
+        if submitted:
+            if not person_name.strip():
+                st.warning("Add the person's name first.")
+            elif save(log_chat, person_name.strip(), person_role, person_company, chat_date.isoformat(),
+                      linkedin_url, how_connected, summary, key_takeaways, action_items,
+                      follow_up_date.isoformat() if follow_up_date else ""):
+                st.rerun()
 
 # === TAB: TOOLS ===
 def page_tools():
@@ -1497,20 +1588,27 @@ def page_tools():
     **How to use:**
     1. Open any job application form (Workday, Greenhouse, etc.)
     2. Click the bookmark in your bookmarks bar
-    3. Common fields auto-fill (name, email, phone, LinkedIn, visa status, salary, start date)
-    4. Review and complete any custom questions, then submit
+    3. It fills only the safe fields: name, email, phone, LinkedIn, city, school, degree
+    4. **You** answer sponsorship, work authorization, EEO, salary and start date — it never touches
+       those, because a wrong auto-answer there costs more than typing it (see below)
+    5. Review everything, then submit
     """)
 
-    from src.bookmarklet import generate_bookmarklet_js, get_profile_data
+    from src.bookmarklet import MANUAL_ANSWERS, generate_bookmarklet_js, get_profile_data
     encoded, raw_js = generate_bookmarklet_js()
 
     st.markdown(f'<a href="{encoded}" style="display:inline-block; padding:10px 20px; background:#1a73e8; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">📌 MSCM Auto-Fill (drag to bookmarks)</a>', unsafe_allow_html=True)
     st.caption("👆 Drag this button to your bookmarks bar — clicking here won't do anything useful")
 
-    with st.expander("What data will it fill in?"):
-        data = get_profile_data()
-        st.json(data)
-        st.caption("Edit these in `config/profile.json`")
+    with st.expander("What will it fill in?"):
+        st.json(get_profile_data())
+        st.caption("To change these, ask to have your profile updated.")
+
+    st.markdown("### ✍️ Answer these yourself — consistently")
+    st.caption("Copy-ready answers for the questions the bookmarklet deliberately skips.")
+    for q, a in MANUAL_ANSWERS.items():
+        st.markdown(f"**{q}**")
+        st.code(a, language=None)
 
     with st.expander("View the JavaScript code"):
         st.code(raw_js, language="javascript")
@@ -1518,9 +1616,18 @@ def page_tools():
 # === TAB: EXPORT ===
 def page_export():
     scored = load_jobs(min_score=60)
-    st.subheader("Export Data")
+    st.subheader("📤 Export Data")
+    st.markdown("#### Your data (backup)")
+    st.caption("Everything you've entered — applications, coffee chats, to-dos, STAR stories, mock "
+               "interviews, dismissed jobs. Keep a copy now and then.")
+    st.download_button("📥 Download all my data (JSON)", json.dumps(user_store.load(), indent=2),
+                       f"my-job-search-data-{date.today().isoformat()}.json", "application/json")
+    st.markdown("#### Jobs")
     if not scored.empty:
-        csv = scored[["title", "company", "location", "job_url", "score", "job_type", "region", "salary_min", "salary_max"]].to_csv(index=False)
+        cols = [c for c in ["title", "company", "location", "metro", "company_tier", "job_url", "score",
+                            "ai_read", "eff_posted", "job_type", "region", "salary_min", "salary_max"]
+                if c in scored.columns]
+        csv = scored[cols].rename(columns={"ai_read": "claude_read", "eff_posted": "posted"}).to_csv(index=False)
         st.download_button("📥 Download Jobs (CSV)", csv, "jobs.csv", "text/csv")
     apps_exp = load_applications()
     if not apps_exp.empty:
@@ -1542,6 +1649,8 @@ def page_today():
            and str(a.get("follow_up_date") or "")[:10]
            and str(a["follow_up_date"])[:10] <= today.isoformat()]
     high = [t for t in get_todos("open") if t.get("priority") == "high"]
+    chat_due = [c for c in user_store.get("coffee_chats")
+                if str(c.get("follow_up_date") or "")[:10] and str(c["follow_up_date"])[:10] <= today.isoformat()]
     cad = practice_cadence()
 
     m1, m2, m3, m4 = st.columns(4)
@@ -1549,7 +1658,7 @@ def page_today():
         m1.metric("New since your last visit", int((jobs["scraped_at"].astype(str).str[:10] > baseline).sum()))
     else:
         m1.metric("New since your last visit", "—", help="Counts start from your next visit.")
-    m2.metric("Follow-ups due", len(due))
+    m2.metric("Follow-ups due", len(due) + len(chat_due))
     m3.metric("High-priority to-dos", len(high))
     m4.metric("Last mock interview", "never" if cad["days_since"] is None else f"{cad['days_since']}d ago",
               delta="overdue" if cad["overdue"] else None, delta_color="inverse")
@@ -1589,6 +1698,13 @@ def page_today():
             link = f" · [open ↗]({_safe_url(url)})" if _safe_url(url) else ""
             st.markdown(f"- **{title}** @ {company} — {a.get('status')}, follow up by "
                         f"{str(a['follow_up_date'])[:10]}{link}")
+
+    if chat_due:
+        st.markdown("### ☕ Coffee-chat follow-ups due")
+        for c in sorted(chat_due, key=lambda c: str(c.get("follow_up_date"))):
+            st.markdown(f"- **{html.escape(str(c.get('person_name', '')))}** "
+                        f"({html.escape(str(c.get('person_role') or ''))} @ {html.escape(str(c.get('person_company') or ''))}) "
+                        f"— follow up by {str(c['follow_up_date'])[:10]}")
 
     # --- To-dos ---
     if high:

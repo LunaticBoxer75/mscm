@@ -10,6 +10,7 @@ import json
 import urllib.parse
 from pathlib import Path
 
+from .outreach import _years
 from .scraper import get_db
 
 # UW Foster MSCM alumni search
@@ -160,8 +161,8 @@ def format_referral_report_markdown(report):
         "```",
         "Hi [Name],",
         "",
-        "I'm an incoming MSCM student at UW Foster (starting Fall 2026) with 3 years",
-        "of operations experience at Uber. I noticed [Company] has a [Role] opening",
+        f"I'm an MSCM student at UW Foster (graduating June 2027) with {_years()} years",
+        "of risk & operations experience at Uber. I noticed [Company] has a [Role] opening",
         "and I'd love to learn more about the team and culture.",
         "",
         "Would you be open to a 15-minute chat? Happy to work around your schedule.",
@@ -189,3 +190,4 @@ if __name__ == "__main__":
         console.print(f"\n[green]Saved to output/referral-links.md[/green]")
     else:
         console.print("[yellow]No jobs scoring 75+. Run /find-jobs first.[/yellow]")
+

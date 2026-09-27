@@ -12,13 +12,18 @@ I mined the full text of **3,576 real Program/Project Manager job descriptions**
 
 | Rank | Skill | % of PM JDs |
 |---|---|---|
-| 1 | Cross-functional | **88%** |
-| 2 | Communication | **74%** |
-| 3 | **Risk** | **72%** |
-| 4 | Stakeholder management | **66%** |
-| 5 | **Excel** | **62%** |
-| — | SQL | **8%** |
-| — | Power BI / Python | **4% / 2%** |
+| 1 | Communication | **76%** |
+| 2 | **Risk** | **75%** |
+| 3 | Stakeholder management | **74%** |
+| 4 | Cross-functional | **62%** |
+| 5 | Budget | **45%** |
+| — | Process improvement | 38% |
+| — | **Excel** | **25%** (most-requested tool) |
+| — | PMP | 24% |
+| — | SQL | **7%** |
+| — | Power BI / Python | **6% / 3%** |
+
+> **Re-measured 2026-09-27** on 1,279 current PM descriptions, counting whole words only. The original count matched "excel" inside "excellent" and "cross" inside "across", which inflated Excel (62% → 25%) and cross-functional (88% → 62%). The conclusion is unchanged: your risk/stakeholder background is the top of demand, and Excel is still the most-requested *tool*.
 
 **The takeaway that shapes this whole page:** the top of the demand list *is your Uber background* — risk, stakeholders, cross-functional work. You already clear those. So the tech skills below (SQL, Power BI, Python, vibe-coding) are **not** here to get you past keyword filters. Your résumé already passes those.
 
@@ -30,7 +35,7 @@ They exist for exactly two reasons:
 **Your depth bar (say it out loud before every study session):**
 > *Fluent — can build a prototype, understand the data, and turn it into a storyline. Not an engineer. Not a heavy business analyst.*
 
-Excel comes first because it's 62% of JDs and gives you the fastest credibility. Everything after Excel is about turning your strategy into provable [projects](02-projects.md).
+Excel comes first because it's the most-requested tool (25% of PM JDs — more than SQL, Power BI and Python combined) and gives you the fastest credibility. Everything after Excel is about turning your strategy into provable [projects](02-projects.md).
 
 ---
 
@@ -51,7 +56,7 @@ Why: SQL and your first real Python analysis are your *interview insurance*. If 
 |---|---|
 | **Depth target** | Pivot tables, XLOOKUP, Power Query, clean dashboards |
 | **Learn mode** | **Deep** (builds on your existing pivot/trend base) |
-| **Why first** | 62% of PM JDs; fastest credibility; you're already partway there |
+| **Why first** | Most-requested tool (25% of PM JDs); fastest credibility; you're already partway there |
 | **Scheduled** | **Weeks 1–3** ([schedule](MASTER-SCHEDULE.md)) |
 
 **Resources:** [ExcelJet](https://exceljet.net) (formula reference + quick lessons) · [Microsoft Learn — Excel](https://learn.microsoft.com/training/) (Power Query, dashboards)

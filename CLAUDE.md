@@ -184,6 +184,24 @@ match is tried before suffix-stripped (else "Compass Group USA" → Compass the 
 **Jobs** — 4 panels (Seattle FT, National FT, then the two internship panels labelled fallback). Row-per-job with
 25-per-page pagination — `st.dataframe(on_select=...)` was unreliable and 500 buttons was slow.
 
+**Tracker** — every application is editable (status incl. offer/rejected, notes, follow-up date). Each
+record keeps a copy of the job's title/company/URL, and the export always ships jobs she applied to.
+
+**Tools** — the ATS bookmarklet fills ONLY name, email, phone, LinkedIn, city, school, degree. It never
+touches sponsorship, work authorization, EEO, salary or start date (substring matching once filled
+"Ethnicity" with "Seattle"); those are shown as copy-ready answers. `smoke_test_pages.py` syntax-checks
+it with node.
+
+**To-Dos** — deleting marks an item `deleted` (hidden) instead of erasing it, because coffee-chat action
+items are re-imported by text on every load. Every write goes through `save()`, which shows an error
+instead of a traceback if GitHub is unreachable.
+
+**Skills Gap / Skills Insights** — one analysis (`src/skills_insights.py`), computed at export from FULL
+descriptions of 70+ jobs and stored in the deploy DB's `insights` table. Whole words (plural allowed),
+Markdown escapes removed first. Current (2026-09-27, 3,543 descriptions): Excel 43%, data analysis 33%,
+ERP 26%, data viz 18%, forecasting 17%, SQL 13%, Power BI 10%, Tableau 9%; communication 62%,
+leadership 57%, stakeholder 51%. The older "Excel 70% / ERP 58%" figures were substring-inflated.
+
 **Interview Prep** — 7 sub-tabs, driven by `content/*.json`:
 `🗺️ Loop Map · 🧩 Frameworks · 🧪 Case Bank · ⭐ STAR Stories · 🎯 Mock · 🏢 Company Prep · 📚 Resources`
 28 worked cases, 22 frameworks, 41 metrics, 8-stage loop map with per-stage F-1 notes, 11 companies

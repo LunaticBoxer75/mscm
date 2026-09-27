@@ -32,6 +32,7 @@ the same change (standing instruction from the user, 2026-09-27).
 | **90-day prune by posting date** (first-seen date if undated) | 2026-09-26 | Export step |
 | **Old ~250MB git history is NOT purged** (irreversible; not approved) | 2026-09-26 | Never rewrite `main` history |
 | **Company size = curated tiers for the top ~500 employers** (JobSpy only gives Indeed counts) | 2026-09-27 | `config/company_sizes.json` |
+| **Skill-demand stats: whole words, Markdown un-escaped, full descriptions only** — substring counts had Excel at 73% ("excellent"), real ~43% | 2026-09-27 | `src/skills_insights.py`, computed at export |
 | **Never scrape** LinkedIn people search, Glassdoor, Blind, Levels.fyi (ToS) | 2026-06 | Deep links only |
 
 ---
@@ -330,8 +331,13 @@ c = story_coverage(); print(f\"STAR themes covered {len(c['covered'])}/{len(c['c
 
 ## 7. Export the deploy DB [REQUIRED]
 
-Builds `data/jobs_deploy.db` from jobs scoring 70+ (full-time and internships alike). **Destructive on
+Builds `data/jobs_deploy.db` from jobs scoring 70+ (full-time and internships alike), and computes
+**skill demand from the FULL descriptions** into its `insights` table — the Skills Gap and Skills
+Insights pages display that (the deploy copy's descriptions are truncated to 800 chars). **Destructive on
 `data/jobs.db`, the only full copy**, in two ways:
+
+Jobs she has applied to always ship to the dashboard regardless of score, so her Tracker rows keep
+their details.
 
 1. **90-day prune** — postings whose posting date (first-seen if undated) is over 90 days old.
 2. **Under-70 cleanup** — any row scoring below 70, EXCEPT jobs she applied to or dismissed and
@@ -443,8 +449,8 @@ exported, prune + cleanup counts, deploy DB size.
   `python3 -c "import json; d=json.load(open('config/h1b_sponsors_verified.json')); print(d['fiscal_year'])"`
 - **[OPTIONAL] Markdown report:** `python -c "from src.reporter import generate_daily_report; generate_daily_report(min_score=70, limit=50)"`
 - **[OPTIONAL] Tracker report:** `python -c "from src.tracker import generate_tracker_report; print(generate_tracker_report())"`
-- **[OPTIONAL] Skills insights** (run against `data/jobs.db`; the deploy copy truncates descriptions):
-  `python -c "from src.skills_insights import analyze_skills; r=analyze_skills(min_score=70); print(r['total'], [(x['skill'], x['pct']) for x in r['technical'][:5]])"`
+- **[OPTIONAL] Skills demand, printed** (the export already stores it for the dashboard):
+  `python3 -c "from src.skills_insights import analyze_skills; r=analyze_skills(min_score=70, db_path='data/jobs.db'); print(r['total'], [(x['skill'], x['pct']) for x in r['technical'][:6]])"`
 - **[OPTIONAL] Import coffee-chat action items into to-dos:**
   `python3 -c "from src.todos import import_coffee_chat_actions; print('imported', import_coffee_chat_actions())"`
 

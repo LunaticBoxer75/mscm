@@ -14,7 +14,13 @@ def _todo(item, category="general", source="manual", priority="medium"):
 
 
 def add_todo(item, category="general", source="manual", priority="medium"):
-    # Dedup by exact item text, checked inside the write so it's race-free
+    # Dedup by exact item text, checked inside the write so it's race-free.
+    # Re-adding something she deleted brings that item back rather than doing nothing.
+    gone = next((t for t in user_store.get("todos")
+                 if t.get("item") == item and t.get("status") == "deleted"), None)
+    if gone:
+        return user_store.update("todos", gone["id"], {"status": "open", "done_at": None},
+                                 message="Restore to-do")
     return user_store.add_unique("todos", _todo(item, category, source, priority),
                                  unique_on="item", message="Add to-do")
 
@@ -27,7 +33,8 @@ def set_status(todo_id, status):
 
 
 def get_todos(status=None):
-    rows = user_store.get("todos")
+    """Open and done items (deleted ones are hidden). Pass status to filter."""
+    rows = [t for t in user_store.get("todos") if t.get("status") != "deleted"]
     if status:
         rows = [r for r in rows if r.get("status") == status]
     return sorted(
@@ -38,7 +45,9 @@ def get_todos(status=None):
 
 
 def delete_todo(todo_id):
-    return user_store.delete("todos", todo_id)
+    """Hide a to-do. It's marked deleted, not erased: coffee-chat action items are
+    re-imported by text on every load, so erasing one would bring it straight back."""
+    return user_store.update("todos", todo_id, {"status": "deleted"}, message="Delete to-do")
 
 
 def import_coffee_chat_actions():

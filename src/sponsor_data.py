@@ -21,7 +21,9 @@ KNOWN_SPONSORS = {
     "Meta": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
     "Apple": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
     "Tesla": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
-    "Boeing": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
+    # Not in USCIS's FY2023 top 1,000; most roles require U.S.-person status (ITAR) —
+    # 76 of 82 readable Boeing postings in the DB say so.
+    "Boeing": {"e_verify": True, "h1b_volume": "low", "scm_focus": True, "us_only": True},
     "Intel": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
     "NVIDIA": {"e_verify": True, "h1b_volume": "very_high", "scm_focus": True},
     "Qualcomm": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
@@ -37,7 +39,6 @@ KNOWN_SPONSORS = {
     "Pfizer": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
     "AbbVie": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
     "Merck": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
-    "GE": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
     "General Electric": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
     "Honeywell": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
     "3M": {"e_verify": True, "h1b_volume": "high", "scm_focus": True},
@@ -137,13 +138,21 @@ def _load_verified():
     return _VERIFIED_CACHE
 
 
+# Names USCIS files under a different spelling
+_USCIS_ALIASES = {"WALMART": "WAL MART", "GE": "GENERAL ELECTRIC", "P&G": "PROCTER & GAMBLE",
+                  "J&J": "JOHNSON & JOHNSON", "AWS": "AMAZON WEB SERVICES"}
+
+
 def lookup_verified_sponsor(company_name):
-    """Look up actual USCIS H1B approval count for a company (fuzzy match)."""
+    """Look up actual USCIS H1B approval count for a company (whole-word match)."""
     if not company_name:
         return None
     data = _load_verified()
     sponsors = data.get("sponsors", {})
     norm = company_name.upper().strip()
+    for a, b in _USCIS_ALIASES.items():
+        if norm == a or norm.startswith(a + " "):
+            norm = b + norm[len(a):]
 
     # Direct match
     if norm in sponsors:
@@ -156,9 +165,10 @@ def lookup_verified_sponsor(company_name):
     best = None
     for key, val in sponsors.items():
         key_tokens = set(w for w in key.replace(",", " ").replace(".", " ").split() if len(w) > 2)
-        # Require the company's first significant word to be in the key
+        # The company's first significant word must be a whole WORD of the key
+        # ("META" must not match "METALS")
         first_word = norm.split()[0] if norm.split() else ""
-        if first_word and len(first_word) > 2 and first_word in key:
+        if first_word and len(first_word) > 2 and first_word in key_tokens:
             if best is None or val["h1b_approvals"] > best["h1b_approvals"]:
                 best = {**val, "fiscal_year": data.get("fiscal_year")}
     return best
@@ -207,30 +217,22 @@ def get_sponsor_badge(company_name):
 
 
 def get_top_sponsors_for_scm():
-    """Return ranked list of top SCM-focused H1B sponsors with E-Verify."""
-    candidates = []
+    """Curated SCM employers, ranked by ACTUAL USCIS H-1B approvals (not hand labels).
+
+    Each entry: company, approvals (None if not in USCIS's top 1,000), fiscal_year,
+    us_only (roles mostly need U.S.-person status / clearance).
+    """
+    seen, out = set(), []
     for company, info in KNOWN_SPONSORS.items():
-        if info.get("non_sponsor") or info.get("us_only"):
+        if info.get("non_sponsor") or not info.get("scm_focus"):
             continue
-        if not info.get("e_verify"):
+        canon = (company.replace(".com", "").replace(" Web Services", "").replace(" Inc", "")
+                 .replace("General Electric", "GE").strip())
+        if canon in seen:
             continue
-        if not info.get("scm_focus"):
-            continue
-
-        volume_score = {"very_high": 4, "high": 3, "medium": 2, "low": 1}.get(info.get("h1b_volume"), 0)
-        candidates.append({
-            "company": company,
-            "h1b_volume": info["h1b_volume"],
-            "score": volume_score,
-        })
-
-    # Dedupe by canonical name (Amazon / Amazon.com)
-    seen = set()
-    unique = []
-    for c in sorted(candidates, key=lambda x: -x["score"]):
-        canon = c["company"].replace(".com", "").replace(" Web Services", "").replace(" Inc", "").strip()
-        if canon not in seen:
-            seen.add(canon)
-            unique.append(c)
-
-    return unique[:50]
+        seen.add(canon)
+        v = lookup_verified_sponsor(company)
+        out.append({"company": company, "approvals": (v or {}).get("h1b_approvals"),
+                    "fiscal_year": _load_verified().get("fiscal_year"), "us_only": bool(info.get("us_only"))})
+    # Sponsors she can actually use first, by approvals; U.S.-person-only employers last
+    return sorted(out, key=lambda x: (x["us_only"], -(x["approvals"] or 0)))
