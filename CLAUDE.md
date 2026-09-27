@@ -73,11 +73,11 @@ src/company_size.py         ← Size tiers from config/company_sizes.json (top ~
 src/projects.py             ← Auto-generate portfolio projects from skill gaps
 src/referrals.py            ← LinkedIn referral link generator (search links only, never scraped)
 src/pipeline.py             ← Orchestrator (full pipeline or individual steps)
-app.py                      ← Streamlit dashboard, 13 pages via st.navigation (local + Cloud)
+app.py                      ← Streamlit dashboard, 14 pages via st.navigation (local + Cloud)
 src/jobs_data.py            ← Downloads the deploy DB from the jobs-data branch
 scripts/publish_jobs_db.py  ← Publishes the deploy DB to jobs-data (single commit, force-replaced)
 scripts/dedupe_jobs.py      ← One-time cleanup of same-URL duplicate rows
-scripts/smoke_test_pages.py ← Renders all 13 pages headlessly; exit 1 on any exception
+scripts/smoke_test_pages.py ← Renders all 14 pages headlessly; exit 1 on any exception
 scripts/export_deploy_db.py ← Trim + prune → data/jobs_deploy.db
 scripts/migrate_user_data.py ← One-time SQLite → user_data.json migration (idempotent)
 ```
@@ -164,7 +164,8 @@ jobs — and new-grad roles are full-time (OPT) for her.
 **Hosted on Streamlit Cloud** — same `app.py` runs locally and deployed.
 - URL: https://mscm-bhumika.streamlit.app/
 - GitHub repo: https://github.com/LunaticBoxer75/mscm (private)
-- Reads jobs from the committed `data/jobs_deploy.db`; her data from `data/user_data.json`
+- Reads jobs from `data/jobs_deploy.db` on the `jobs-data` branch; her data from `data/user_data.json` on the
+  `user-data` branch (see Data Stores)
 - Access: Invite-only via Streamlit Cloud sharing settings
 
 ### Pages (14, in sidebar sections)
@@ -282,11 +283,12 @@ found, but aren't searched directly.
 ## Key Dependencies
 
 - `python-jobspy` — Multi-board job scraping (MIT, 3.5k stars)
-- `anthropic[bedrock]` — Claude via AWS Bedrock (uses corporate AWS credentials)
 - `pandas` — Data manipulation
 - `rich` — Terminal output formatting
 - `streamlit` — Web dashboard (local + Streamlit Cloud)
 - `requests` — GitHub contents API for user-data write-back (ships with streamlit)
+- `sqlite-utils`, `python-docx` — DB helpers; DOCX export
+- No LLM SDK: Pass-2 scoring is Claude Code subagents reading batch files (no API key, no Bedrock)
 
 ## Notes
 
@@ -294,8 +296,7 @@ found, but aren't searched directly.
 - Bhumika's LinkedIn: `bhummika`
 - Program is STEM-designated (3-year OPT eligibility)
 - Program: June 2026 — May/June 2027 (1-year, STEM-designated)
-- Scoring uses Claude Sonnet via Bedrock (us-west-2, model: us.anthropic.claude-sonnet-4-20250514-v1:0)
-- AWS auth: uses default credential chain (ada / SSO)
+- Pass-2 scoring runs inside Claude Code (subagents); Bedrock and the `anthropic` SDK were removed
 - Firestore was DROPPED (free-tier quota) and its code deleted. Audited 2026-09-26: it holds only a stale
   May 26-27 snapshot (9,800 jobs, all posted before June, + 8,558 empty score-only docs) and NONE of
   her data. `data/jobs.db` is the only real job source. Revoke the service-account key when convenient.
