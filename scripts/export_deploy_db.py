@@ -1,8 +1,18 @@
-"""Export the deploy DB: top jobs + all auxiliary tracker tables.
+"""Export the deploy DB: top jobs only.
 
 Run after scraping/scoring to refresh data/jobs_deploy.db for the dashboard.
-Keeps full-time jobs scoring 70+ and internships 55+, plus all tracker tables
-(applications, coffee_chats, todos, interview_recs, star_stories).
+Keeps jobs scoring 70+, full-time and internship alike.
+
+Internships used to get a lower bar (55) when they were a priority. As of
+2026-09-23 they are a fallback only — full-time is the priority, since the UW CPT
+one-year rule likely rules out an internship inside her first academic year. Same
+bar for both now; a 70 floor still leaves ~2.3K internships (280 in Seattle).
+
+Bhumika's own data (applications, coffee chats, todos, recommendations, STAR
+stories, mock sessions) deliberately does NOT live here — it lives in
+data/user_data.json via src/user_store.py. It used to be copied into this file,
+which meant every push of this DB overwrote whatever she'd typed on the hosted
+dashboard. Keep those two files disjoint.
 """
 
 import sqlite3
@@ -13,11 +23,52 @@ DATA = Path(__file__).parent.parent / "data"
 SRC = DATA / "jobs.db"
 DST = DATA / "jobs_deploy.db"
 
-AUX_TABLES = ["applications", "coffee_chats", "todos", "interview_recs", "star_stories"]
+
+def _tracked_job_ids():
+    """Job IDs she has an application record for — these survive the prune."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from src import user_store
+
+    if not user_store.is_remote():
+        if not user_store.PATH.exists():
+            raise SystemExit(
+                "No MSCM_GITHUB_TOKEN and no local data/user_data.json snapshot — can't see "
+                "which jobs she's tracking, so refusing to prune. Add the token to "
+                ".streamlit/secrets.toml (see secrets.toml.example)."
+            )
+        print("WARNING: no MSCM_GITHUB_TOKEN — protecting tracked jobs using the LOCAL "
+              "snapshot of her data, which may be stale.")
+    return [a["job_id"] for a in user_store.get("applications") if a.get("job_id")]
 
 
 def main():
     src = sqlite3.connect(SRC)
+
+    # Prune postings older than 90 days (keep any that are tracked).
+    # Age = when the posting was published; undated rows fall back to when we
+    # first saw them. NOT scraped_at alone — the scraper uses INSERT OR IGNORE, so
+    # scraped_at is first-seen, and pruning on it deleted still-live postings.
+    #
+    # _tracked_job_ids() raises if user_data.json is unreadable, which aborts the
+    # export BEFORE anything is deleted — an empty tracked list would prune her
+    # tracked jobs.
+    #
+    # Sentinel when nothing is tracked: `NOT IN (NULL)` yields NULL in SQL, which
+    # would silently prune nothing. An empty string can never be a real job_id.
+    tracked = _tracked_job_ids() or [""]
+    placeholders = ",".join("?" * len(tracked))
+    pruned = src.execute(
+        f"""DELETE FROM jobs
+            WHERE COALESCE(date_posted, substr(scraped_at, 1, 10)) < date('now','-90 days')
+            AND job_id NOT IN ({placeholders})""",
+        tracked,
+    ).rowcount
+    src.commit()
+    if pruned:
+        print(f"Pruned {pruned} jobs older than 90 days")
+
     dst = sqlite3.connect(DST)
 
     # Jobs (trimmed)
@@ -37,31 +88,26 @@ def main():
                is_remote, notified, region, dismissed
         FROM jobs WHERE (dismissed IS NULL OR dismissed = 0)
         AND title IS NOT NULL AND title != '' AND company IS NOT NULL AND company != ''
-        AND ((job_type='internship' AND score>=55) OR (job_type!='internship' AND score>=70))
+        AND score >= 70
     """).fetchall()
     dst.executemany("INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
 
-    # Auxiliary tracker tables — copy verbatim
-    for tbl in AUX_TABLES:
-        schema = src.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
-        ).fetchone()
-        if not schema or not schema[0]:
-            continue
+    # Drop any aux tables left over from before her data moved to user_data.json.
+    # Leaving them would let a stale copy shadow the real store.
+    for tbl in ("applications", "coffee_chats", "todos", "interview_recs", "star_stories"):
         dst.execute(f"DROP TABLE IF EXISTS {tbl}")
-        dst.execute(schema[0])
-        trows = src.execute(f"SELECT * FROM {tbl}").fetchall()
-        if trows:
-            placeholders = ",".join(["?"] * len(trows[0]))
-            dst.executemany(f"INSERT INTO {tbl} VALUES ({placeholders})", trows)
 
     dst.commit()
     dst.execute("VACUUM")
     dst.close()
     src.close()
 
+    # A fresh local export is authoritative on this machine: drop the marker that
+    # would let src/jobs_data.py overwrite it with the last published copy.
+    (DATA / ".jobs_deploy.sha").unlink(missing_ok=True)
+
     size_mb = os.path.getsize(DST) / 1024 / 1024
-    print(f"Exported {len(rows)} jobs + aux tables ({size_mb:.1f}MB)")
+    print(f"Exported {len(rows)} jobs ({size_mb:.1f}MB)")
 
 
 if __name__ == "__main__":

@@ -1,48 +1,32 @@
-"""Interview prep — recommendations from mentors, STAR stories, mock question bank."""
+"""Interview prep — recommendations from mentors, STAR stories, mock question bank.
+
+Her data (recs, stories, mock sessions) is backed by src/user_store.py — durable
+JSON, not SQLite. The question bank and themes below are static content.
+"""
 
 import random
 from datetime import datetime
-from .scraper import get_db
+
+from . import user_store
 
 
 # ============ RECOMMENDATIONS ============
-def _ensure_rec_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS interview_recs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            recommendation TEXT NOT NULL,
-            category TEXT DEFAULT 'general',
-            recommended_by TEXT,
-            person_role TEXT,
-            created_at TEXT
-        )
-    """)
-    conn.commit()
-    return conn
+def _rec(recommendation, category, recommended_by, person_role=""):
+    return {"recommendation": recommendation, "category": category,
+            "recommended_by": recommended_by, "person_role": person_role}
 
 
 def add_recommendation(recommendation, category, recommended_by, person_role=""):
-    conn = _ensure_rec_table()
-    existing = conn.execute("SELECT id FROM interview_recs WHERE recommendation = ?", (recommendation,)).fetchone()
-    if existing:
-        conn.close()
-        return
-    conn.execute("""
-        INSERT INTO interview_recs (recommendation, category, recommended_by, person_role, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, (recommendation, category, recommended_by, person_role, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    return user_store.add_unique("interview_recs",
+                                 _rec(recommendation, category, recommended_by, person_role),
+                                 unique_on="recommendation", message="Add recommendation")
 
 
 def get_recommendations():
-    conn = _ensure_rec_table()
-    cursor = conn.execute("SELECT * FROM interview_recs ORDER BY category, created_at DESC")
-    columns = [d[0] for d in cursor.description]
-    rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
-    conn.close()
-    return rows
+    """Grouped by category; newest first within a category."""
+    rows = sorted(user_store.get("interview_recs"),
+                  key=lambda r: r.get("created_at") or "", reverse=True)
+    return sorted(rows, key=lambda r: r.get("category") or "")  # stable: keeps newest-first
 
 
 def seed_shivam_recommendations():
@@ -59,27 +43,14 @@ def seed_shivam_recommendations():
         ("Broaden target roles: Product, Program, Vendor, and general Management — not just SCM", "Role Targeting", "Shivam Suru", "AI Product Manager, Amazon"),
         ("Do a mock interview every 2 weeks to keep stories sharp and learn current top questions", "Practice", "Shivam Suru", "AI Product Manager, Amazon"),
     ]
-    for rec, cat, by, role in recs:
-        add_recommendation(rec, cat, by, role)
+    existing = {r.get("recommendation") for r in user_store.get("interview_recs")}
+    new = [_rec(*r) for r in recs if r[0] not in existing]
+    if new:  # runs on every render: zero commits once seeded
+        user_store.add_many("interview_recs", new, "Seed mentor recommendations",
+                            unique_on="recommendation")
 
 
 # ============ STAR STORIES ============
-def _ensure_story_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS star_stories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            theme TEXT DEFAULT 'general',
-            situation TEXT, task TEXT, action TEXT, result TEXT,
-            tags TEXT,
-            created_at TEXT, updated_at TEXT
-        )
-    """)
-    conn.commit()
-    return conn
-
-
 STORY_THEMES = [
     "Leadership", "Conflict Management", "Prioritization", "Dealing with Ambiguity",
     "Failure / Learning", "Data-Driven Decision", "Cross-Functional Collaboration",
@@ -89,33 +60,41 @@ STORY_THEMES = [
 
 
 def add_story(title, theme, situation, task, action, result, tags=""):
-    conn = _ensure_story_table()
-    now = datetime.now().isoformat()
-    conn.execute("""
-        INSERT INTO star_stories (title, theme, situation, task, action, result, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (title, theme, situation, task, action, result, tags, now, now))
-    conn.commit()
-    conn.close()
+    return user_store.add("star_stories", {
+        "title": title, "theme": theme, "situation": situation,
+        "task": task, "action": action, "result": result, "tags": tags,
+    }, message=f"Add STAR story: {title}")
 
 
 def get_stories(theme=None):
-    conn = _ensure_story_table()
+    rows = user_store.get("star_stories")
     if theme:
-        cursor = conn.execute("SELECT * FROM star_stories WHERE theme = ? ORDER BY updated_at DESC", (theme,))
-    else:
-        cursor = conn.execute("SELECT * FROM star_stories ORDER BY theme, updated_at DESC")
-    columns = [d[0] for d in cursor.description]
-    rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
-    conn.close()
-    return rows
+        rows = [r for r in rows if r.get("theme") == theme]
+    # Grouped by theme; most recently edited first within a theme
+    rows = sorted(rows, key=lambda r: r.get("updated_at") or r.get("created_at") or "",
+                  reverse=True)
+    return sorted(rows, key=lambda r: r.get("theme") or "")
+
+
+def update_story(story_id, fields):
+    return user_store.update("star_stories", story_id, fields)
 
 
 def delete_story(story_id):
-    conn = _ensure_story_table()
-    conn.execute("DELETE FROM star_stories WHERE id = ?", (story_id,))
-    conn.commit()
-    conn.close()
+    return user_store.delete("star_stories", story_id)
+
+
+def story_coverage():
+    """Which behavioral themes still have no story. Drives the coverage gauge.
+
+    A story bank with gaps is the single most common cause of a blown behavioral
+    round, so this is surfaced prominently rather than buried.
+    """
+    have = {s.get("theme") for s in get_stories()}
+    return {
+        "covered": [t for t in STORY_THEMES if t in have],
+        "missing": [t for t in STORY_THEMES if t not in have],
+    }
 
 
 # ============ MOCK INTERVIEW QUESTION BANK ============
@@ -182,6 +161,51 @@ def generate_mock_interview(n=5):
     picked = behavioral[:n_behavioral] + others[:(n - n_behavioral)]
     rng.shuffle(picked)
     return picked[:n]
+
+
+# ============ MOCK SESSION HISTORY ============
+# Answers used to vanish on every rerun. They persist now, because a written
+# mock answer is usually the first draft of a STAR story.
+def save_mock_session(questions, answers, company="", notes=""):
+    """Persist one mock attempt. `answers` maps question index -> text."""
+    return user_store.add("mock_sessions", {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "company": company,
+        "notes": notes,
+        "items": [
+            {
+                "category": q.get("category", ""),
+                "question": q.get("question", ""),
+                "answer": answers.get(i, ""),
+            }
+            for i, q in enumerate(questions, 1)
+        ],
+    }, message="Save mock interview session")
+
+
+def get_mock_sessions():
+    return sorted(
+        user_store.get("mock_sessions"),
+        key=lambda s: s.get("created_at") or "",
+        reverse=True,
+    )
+
+
+def delete_mock_session(session_id):
+    return user_store.delete("mock_sessions", session_id)
+
+
+def practice_cadence():
+    """Days since the last mock. Mentor advice is one every 2 weeks."""
+    sessions = get_mock_sessions()
+    if not sessions:
+        return {"last": None, "days_since": None, "overdue": True}
+    last = sessions[0].get("date") or sessions[0].get("created_at", "")[:10]
+    try:
+        days = (datetime.now() - datetime.strptime(last[:10], "%Y-%m-%d")).days
+    except ValueError:
+        return {"last": last, "days_since": None, "overdue": False}
+    return {"last": last, "days_since": days, "overdue": days > 14}
 
 
 # ============ INTERVIEW EXPERIENCE SOURCES ============

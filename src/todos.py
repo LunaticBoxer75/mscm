@@ -1,69 +1,58 @@
-"""To-Do tracker — manual items + auto-imported coffee chat action items."""
+"""To-Do tracker — manual items + auto-imported coffee chat action items.
+
+Backed by src/user_store.py (durable JSON), not SQLite — see that module for why.
+"""
 
 from datetime import datetime
-from .scraper import get_db
+
+from . import user_store
 
 
-def _ensure_table():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item TEXT NOT NULL,
-            category TEXT DEFAULT 'general',
-            source TEXT DEFAULT 'manual',
-            status TEXT DEFAULT 'open',
-            priority TEXT DEFAULT 'medium',
-            created_at TEXT,
-            done_at TEXT
-        )
-    """)
-    conn.commit()
-    return conn
+def _todo(item, category="general", source="manual", priority="medium"):
+    return {"item": item, "category": category, "source": source,
+            "priority": priority, "status": "open", "done_at": None}
 
 
 def add_todo(item, category="general", source="manual", priority="medium"):
-    conn = _ensure_table()
-    # Avoid duplicates by exact item text
-    existing = conn.execute("SELECT id FROM todos WHERE item = ?", (item,)).fetchone()
-    if existing:
-        conn.close()
-        return
-    conn.execute("""
-        INSERT INTO todos (item, category, source, priority, status, created_at)
-        VALUES (?, ?, ?, ?, 'open', ?)
-    """, (item, category, source, priority, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    # Dedup by exact item text, checked inside the write so it's race-free
+    return user_store.add_unique("todos", _todo(item, category, source, priority),
+                                 unique_on="item", message="Add to-do")
 
 
 def set_status(todo_id, status):
-    conn = _ensure_table()
-    done_at = datetime.now().isoformat() if status == "done" else None
-    conn.execute("UPDATE todos SET status = ?, done_at = ? WHERE id = ?", (status, done_at, todo_id))
-    conn.commit()
-    conn.close()
+    user_store.update("todos", todo_id, {
+        "status": status,
+        "done_at": datetime.now().isoformat() if status == "done" else None,
+    })
 
 
 def get_todos(status=None):
-    conn = _ensure_table()
+    rows = user_store.get("todos")
     if status:
-        cursor = conn.execute("SELECT * FROM todos WHERE status = ? ORDER BY created_at DESC", (status,))
-    else:
-        cursor = conn.execute("SELECT * FROM todos ORDER BY status, created_at DESC")
-    columns = [d[0] for d in cursor.description]
-    rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
-    conn.close()
-    return rows
+        rows = [r for r in rows if r.get("status") == status]
+    return sorted(
+        rows,
+        key=lambda r: (r.get("status") or "", r.get("created_at") or ""),
+        reverse=True,
+    )
+
+
+def delete_todo(todo_id):
+    return user_store.delete("todos", todo_id)
 
 
 def import_coffee_chat_actions():
     """Pull action items from coffee chats into todos (dedup by text)."""
     from .networking import get_all_action_items
+
     items = get_all_action_items()
-    for ai in items:
-        add_todo(ai["item"], category="from-coffee-chat", source=ai["from"])
-    return len(items)
+    existing = {t.get("item") for t in user_store.get("todos")}
+    new = [_todo(ai["item"], "from-coffee-chat", ai["from"])
+           for ai in items if ai["item"] not in existing]
+    # Runs on every render: one commit for all new items, zero if none are new
+    if new:
+        user_store.add_many("todos", new, "Import coffee-chat action items", unique_on="item")
+    return len(new)
 
 
 def seed_defaults():
@@ -75,5 +64,7 @@ def seed_defaults():
         ("Schedule 2 coffee chats/week + 1 senior/partner chat", "networking", "Shivam Suru", "medium"),
         ("Do 1 mock interview every 2 weeks", "interview-prep", "Shivam Suru", "medium"),
     ]
-    for item, cat, src, pri in defaults:
-        add_todo(item, category=cat, source=src, priority=pri)
+    existing = {t.get("item") for t in user_store.get("todos")}
+    new = [_todo(i, c, s, p) for i, c, s, p in defaults if i not in existing]
+    if new:
+        user_store.add_many("todos", new, "Seed standing to-dos", unique_on="item")

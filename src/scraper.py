@@ -1,7 +1,13 @@
 """Job scraper using JobSpy to aggregate listings from multiple boards."""
 
+import hashlib
 import json
+import logging
+import re
 import sqlite3
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -54,15 +60,118 @@ def get_db():
         conn.execute("ALTER TABLE jobs ADD COLUMN region TEXT DEFAULT 'seattle'")
     except sqlite3.OperationalError:
         pass
+    # One row per posting URL, so INSERT OR IGNORE dedups by URL even for rows
+    # stored under the old per-process random ids. Creation fails while duplicate
+    # URLs exist; scripts/dedupe_jobs.py removes them and creates it.
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_url ON jobs(job_url) WHERE job_url != ''")
+    except sqlite3.IntegrityError:
+        pass
     conn.commit()
     return conn
 
 
+# ---------- parallel fetch + LinkedIn block detection ----------
+
+_BLOCK_COOLDOWN = 120          # seconds every worker waits after LinkedIn returns 429
+_cooldown_until = 0.0
+_blocks = 0
+_block_lock = threading.Lock()
+
+
+class _BlockWatcher(logging.Handler):
+    """JobSpy logs a LinkedIn 429 and silently returns partial results; catch it."""
+
+    def emit(self, record):
+        global _cooldown_until, _blocks
+        if "429" in record.getMessage():
+            with _block_lock:
+                _blocks += 1
+                _cooldown_until = time.time() + _BLOCK_COOLDOWN
+            print(f"  [!] LinkedIn 429 (blocked) — all workers pausing {_BLOCK_COOLDOWN}s", flush=True)
+
+
+_watcher = _BlockWatcher(level=logging.ERROR)
+for _name in list(logging.root.manager.loggerDict):
+    if _name.startswith("JobSpy:"):
+        logging.getLogger(_name).addHandler(_watcher)
+
+
+def _fetch(task, sites, results, hours_old, country):
+    """Run one search (in a worker thread). Returns (task, df, error)."""
+    region_tag, jtype, search_term, category, location = task
+    wait = _cooldown_until - time.time()
+    if wait > 0:
+        time.sleep(wait)  # back off only after an actual block
+    try:
+        df = scrape_jobs(
+            site_name=sites, search_term=search_term, location=location,
+            results_wanted=results, hours_old=hours_old, country_indeed=country,
+            job_type=jtype, description_format="markdown", verbose=0,
+        )
+        return task, df, None
+    except Exception as e:
+        return task, None, e
+
+
+_INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?|new grad)\b")
+
+
+def _row_to_job(row, jtype, search_term, category, region_tag):
+    """Normalize one JobSpy row into a DB record, or None if it's unusable."""
+    title_str = str(row.get("title", "")) if pd.notna(row.get("title")) else ""
+    company_str = str(row.get("company", "")) if pd.notna(row.get("company")) else ""
+    if not title_str or not company_str:
+        return None
+
+    # Title overrides job_type for intern/co-op/new-grad roles. Word boundaries:
+    # plain substrings matched "Internal" (1,323 mis-tags) and "Cooper"/"Cooperative".
+    effective_type = "internship" if _INTERN_RE.search(title_str.lower()) else jtype
+
+    return {
+        "job_id": generate_job_id(row),
+        "title": title_str,
+        "company": company_str,
+        "location": str(row.get("location", "")) if pd.notna(row.get("location")) else "",
+        "job_url": str(row.get("job_url", "")) if pd.notna(row.get("job_url")) else "",
+        "description": str(row.get("description", ""))[:10000] if pd.notna(row.get("description")) else "",
+        "job_type": effective_type,
+        # pd.notna guard: str(NaN) is the literal "nan", which sorted after every real
+        # date and passed every "Last N days" filter (9,445 rows, 2026-09).
+        "date_posted": str(row.get("date_posted"))[:10] if pd.notna(row.get("date_posted")) else None,
+        "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
+        "salary_max": float(row["max_amount"]) if pd.notna(row.get("max_amount")) else None,
+        "salary_currency": str(row.get("currency")) if pd.notna(row.get("currency")) else "USD",
+        "source": str(row.get("site")) if pd.notna(row.get("site")) else "",
+        "search_term": search_term,
+        "search_category": category,
+        "scraped_at": datetime.now().isoformat(),
+        "is_remote": 1 if row.get("is_remote") else 0,
+        "region": region_tag,
+    }
+
+
+def _progress(done, total, started, region, jtype, term, location, new):
+    """One line per query, so a hung run is distinguishable from a slow one."""
+    elapsed = (datetime.now() - started).total_seconds()
+    eta = elapsed / done * (total - done) if done else 0
+    blocks = f" | {_blocks} LinkedIn blocks" if _blocks else ""
+    print(f"[{done}/{total}] {region}/{jtype} '{term}' @ {location}: +{new} new "
+          f"| {elapsed/60:.0f}m elapsed, ~{eta/60:.0f}m left{blocks}", flush=True)
+
+
 def generate_job_id(row):
-    """Create a stable ID from job URL or title+company combo."""
+    """Stable ID from job URL (or title+company+location when there's no URL).
+
+    hashlib, not hash(): Python salts str hashes per process, so hash(url) gave
+    the same posting a new id every run and INSERT OR IGNORE never ignored
+    anything — 5,566 duplicate rows by 2026-09.
+    """
     if pd.notna(row.get("job_url")) and row["job_url"]:
-        return str(hash(row["job_url"]))
-    return str(hash(f"{row.get('title', '')}-{row.get('company', '')}-{row.get('location', '')}"))
+        key = str(row["job_url"])
+    else:
+        key = f"{row.get('title', '')}-{row.get('company', '')}-{row.get('location', '')}"
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 
 def scrape_all_jobs(sites=None, hours_old=None, region=None):
@@ -90,103 +199,57 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
 
     job_types_to_scrape = prefs["job_types"]
 
+    tasks = [
+        (region_tag, jtype, query["search_term"], query["category"], location)
+        for region_tag, locations in location_groups
+        for jtype in job_types_to_scrape
+        for query in queries["queries"]
+        for location in locations
+        if location != "Remote"
+    ]
+    workers = int(prefs.get("scrape_workers", 3))
+    fetch_args = dict(sites=sites, results=prefs["results_per_search"], hours_old=hours_old,
+                      country=prefs["country"])
+
     conn = get_db()
     all_new_jobs = []
+    done, total, started = 0, len(tasks), datetime.now()
 
-    for region_tag, locations in location_groups:
-        for jtype in job_types_to_scrape:
-            for query in queries["queries"]:
-                search_term = query["search_term"]
-                category = query["category"]
-
-                for location in locations:
-                    if location == "Remote":
+    # Searches run in parallel; LinkedIn's per-request pauses (3-7s) are what make
+    # each search take ~50s, not CPU, so 3 at once is ~3x faster. All DB writes
+    # stay on this thread — concurrent writers have corrupted jobs.db before.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_fetch, task, **fetch_args) for task in tasks]
+        for fut in as_completed(futures):
+            (region_tag, jtype, search_term, category, location), jobs_df, err = fut.result()
+            done += 1
+            if err:
+                print(f"  [!] Error scraping '{search_term}' ({jtype}) in {location}: {err}", flush=True)
+                continue
+            before = len(all_new_jobs)
+            if jobs_df is not None and not jobs_df.empty:
+                for _, row in jobs_df.iterrows():
+                    job_data = _row_to_job(row, jtype, search_term, category, region_tag)
+                    if job_data is None:
                         continue
-
-                    try:
-                        jobs_df = scrape_jobs(
-                            site_name=sites,
-                            search_term=search_term,
-                            location=location,
-                            results_wanted=prefs["results_per_search"],
-                            hours_old=hours_old,
-                            country_indeed=prefs["country"],
-                            job_type=jtype,
-                            description_format="markdown",
-                            verbose=0,
-                        )
-                    except Exception as e:
-                        print(f"  [!] Error scraping '{search_term}' ({jtype}) in {location}: {e}")
-                        continue
-
-                    if jobs_df is None or jobs_df.empty:
-                        continue
-
-                    for _, row in jobs_df.iterrows():
-                        job_id = generate_job_id(row)
-
-                        existing = conn.execute(
-                            "SELECT job_id FROM jobs WHERE job_id = ?", (job_id,)
-                        ).fetchone()
-                        if existing:
-                            continue
-
-                        is_remote = 1 if row.get("is_remote") else 0
-                        title_str = str(row.get("title", "")) if pd.notna(row.get("title")) else ""
-                        company_str = str(row.get("company", "")) if pd.notna(row.get("company")) else ""
-
-                        # Skip entries with no title or company
-                        if not title_str or not company_str:
-                            continue
-
-                        # Override job_type if title clearly indicates intern/co-op
-                        # Use word boundaries: " intern" or "internship" but NOT "internal"
-                        effective_type = jtype
-                        title_lower = title_str.lower()
-                        is_intern = (
-                            "internship" in title_lower
-                            or " intern " in title_lower
-                            or title_lower.endswith(" intern")
-                            or title_lower.startswith("intern,")
-                            or "co-op" in title_lower
-                            or "coop" in title_lower
-                            or "new grad" in title_lower
-                        )
-                        if is_intern:
-                            effective_type = "internship"
-
-                        job_data = {
-                            "job_id": job_id,
-                            "title": title_str,
-                            "company": company_str,
-                            "location": str(row.get("location", "")) if pd.notna(row.get("location")) else "",
-                            "job_url": str(row.get("job_url", "")) if pd.notna(row.get("job_url")) else "",
-                            "description": str(row.get("description", ""))[:10000] if pd.notna(row.get("description")) else "",
-                            "job_type": effective_type,
-                            "date_posted": str(row.get("date_posted", "")),
-                            "salary_min": float(row["min_amount"]) if pd.notna(row.get("min_amount")) else None,
-                            "salary_max": float(row["max_amount"]) if pd.notna(row.get("max_amount")) else None,
-                            "salary_currency": str(row.get("currency", "USD")),
-                            "source": str(row.get("site", "")),
-                            "search_term": search_term,
-                            "search_category": category,
-                            "scraped_at": datetime.now().isoformat(),
-                            "is_remote": is_remote,
-                            "region": region_tag,
-                        }
-
-                        conn.execute("""
-                            INSERT OR IGNORE INTO jobs
-                            (job_id, title, company, location, job_url, description, job_type,
-                             date_posted, salary_min, salary_max, salary_currency, source,
-                             search_term, search_category, scraped_at, is_remote, region)
-                            VALUES (:job_id, :title, :company, :location, :job_url, :description,
-                                    :job_type, :date_posted, :salary_min, :salary_max,
-                                    :salary_currency, :source, :search_term, :search_category,
-                                    :scraped_at, :is_remote, :region)
-                        """, job_data)
-
+                    cur = conn.execute("""
+                        INSERT OR IGNORE INTO jobs
+                        (job_id, title, company, location, job_url, description, job_type,
+                         date_posted, salary_min, salary_max, salary_currency, source,
+                         search_term, search_category, scraped_at, is_remote, region)
+                        VALUES (:job_id, :title, :company, :location, :job_url, :description,
+                                :job_type, :date_posted, :salary_min, :salary_max,
+                                :salary_currency, :source, :search_term, :search_category,
+                                :scraped_at, :is_remote, :region)
+                    """, job_data)
+                    # rowcount is 0 when OR IGNORE skipped a posting we already have
+                    if cur.rowcount == 1:
                         all_new_jobs.append(job_data)
+                # Commit per search: one end-of-run commit held a write transaction
+                # open for hours and lost the whole run if the scrape hung late.
+                conn.commit()
+            _progress(done, total, started, region_tag, jtype, search_term, location,
+                      len(all_new_jobs) - before)
 
     conn.commit()
     conn.close()
@@ -196,13 +259,6 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
         try:
             from .quick_scorer import score_all_unscored
             score_all_unscored()
-        except Exception:
-            pass
-
-        # Auto-sync to Firebase
-        try:
-            from .firebase_db import sync_jobs
-            sync_jobs(all_new_jobs)
         except Exception:
             pass
 
@@ -233,13 +289,6 @@ def update_job_score(job_id, score, breakdown):
     """, (score, json.dumps(breakdown), datetime.now().isoformat(), job_id))
     conn.commit()
     conn.close()
-
-    # Auto-sync score to Firebase
-    try:
-        from .firebase_db import sync_scores
-        sync_scores([{"job_id": job_id, "score": score, "score_breakdown": breakdown}])
-    except Exception:
-        pass
 
 
 def get_top_jobs(min_score=60, limit=20):
