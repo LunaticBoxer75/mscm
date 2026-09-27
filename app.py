@@ -206,6 +206,26 @@ def get_comparable_jobs(current_job, limit=3):
     return df.head(limit)
 
 
+# Per-theme colors for the custom styles below. Streamlit's own widgets follow
+# .streamlit/config.toml; these follow whichever mode is active (st.context.theme).
+PALETTES = {
+    "light": {"card": "#F6F4FB", "border": "#E7E3F1", "muted": "#6B7280", "title": "#111827",
+              "pill-bg": "#F3F4F6", "pill": "#374151", "accent-bg": "#EDE9FE", "accent": "#4B2E83",
+              "good-bg": "#DCFCE7", "good": "#166534", "warn-bg": "#FEF3C7", "warn": "#92400E",
+              "pay-bg": "#ECFDF5", "pay": "#047857"},
+    "dark": {"card": "#1B1A26", "border": "#2E2B40", "muted": "#A1A1AA", "title": "#F3F4F6",
+             "pill-bg": "#262436", "pill": "#D1D5DB", "accent-bg": "#2E2450", "accent": "#C4B5FD",
+             "good-bg": "#0F2E1B", "good": "#86EFAC", "warn-bg": "#3A2A0A", "warn": "#FCD34D",
+             "pay-bg": "#0F2A22", "pay": "#6EE7B7"},
+}
+
+
+def theme_vars():
+    kind = getattr(getattr(st.context, "theme", None), "type", None)
+    pal = PALETTES["dark" if kind == "dark" else "light"]
+    return "<style>:root {" + "".join(f"--m-{k}:{v};" for k, v in pal.items()) + "}</style>"
+
+
 CSS = """
 <style>
 /* tighter page top; readable max width */
@@ -218,28 +238,28 @@ CSS = """
 .brand .fresh {background:rgba(255,255,255,.16); padding:.12rem .55rem; border-radius:999px; font-size:.8rem;}
 .brand .fresh.stale {background:#FEF3C7; color:#92400E;}
 /* metric cards */
-[data-testid="stMetric"] {background:#F6F4FB; border:1px solid #E7E3F1; border-radius:.7rem; padding:.55rem .8rem;}
-[data-testid="stMetricLabel"] p {font-size:.8rem; color:#6B7280;}
+[data-testid="stMetric"] {background:var(--m-card); border:1px solid var(--m-border); border-radius:.7rem; padding:.55rem .8rem;}
+[data-testid="stMetricLabel"] p {font-size:.8rem; color:var(--m-muted);}
 /* job cards */
 .job {display:flex; gap:.75rem; align-items:flex-start; padding:.45rem 0;}
 .job-main {min-width:0;}
-.job-title {font-weight:650; font-size:.95rem; line-height:1.3; color:#111827;}
-.job-meta {font-size:.8rem; color:#6B7280; margin-top:.2rem; line-height:1.7;}
+.job-title {font-weight:650; font-size:.95rem; line-height:1.3; color:var(--m-title);}
+.job-meta {font-size:.8rem; color:var(--m-muted); margin-top:.2rem; line-height:1.7;}
 .score {flex:0 0 auto; min-width:2.35rem; text-align:center; font-weight:700; font-size:.85rem;
         padding:.3rem .35rem; border-radius:.55rem; margin-top:.05rem;}
-.score.s90 {background:#DCFCE7; color:#166534;}
-.score.s80 {background:#EDE9FE; color:#4B2E83;}
-.score.s70 {background:#FEF3C7; color:#92400E;}
-.score.slow {background:#F3F4F6; color:#6B7280;}
+.score.s90 {background:var(--m-good-bg); color:var(--m-good);}
+.score.s80 {background:var(--m-accent-bg); color:var(--m-accent);}
+.score.s70 {background:var(--m-warn-bg); color:var(--m-warn);}
+.score.slow {background:var(--m-pill-bg); color:var(--m-muted);}
 .pill {display:inline-block; font-size:.72rem; padding:.05rem .45rem; margin-left:.3rem; border-radius:999px;
-       background:#F3F4F6; color:#374151; white-space:nowrap;}
-.pill.ai {background:#EDE9FE; color:#4B2E83;}
-.pill.pay {background:#ECFDF5; color:#047857;}
-.pill.warn {background:#FEF3C7; color:#92400E;}
-.pill.done {background:#DCFCE7; color:#166534;}
-.open-link {font-size:.82rem; font-weight:600; padding:.25rem .6rem; border:1px solid #E7E3F1;
+       background:var(--m-pill-bg); color:var(--m-pill); white-space:nowrap;}
+.pill.ai {background:var(--m-accent-bg); color:var(--m-accent);}
+.pill.pay {background:var(--m-pay-bg); color:var(--m-pay);}
+.pill.warn {background:var(--m-warn-bg); color:var(--m-warn);}
+.pill.done {background:var(--m-good-bg); color:var(--m-good);}
+.open-link {font-size:.82rem; font-weight:600; padding:.25rem .6rem; border:1px solid var(--m-border);
             border-radius:999px; white-space:nowrap;}
-.open-link:hover {background:#F6F4FB;}
+.open-link:hover {background:var(--m-card);}
 /* compact action buttons on job cards */
 [class*="st-key-ok_"] button, [class*="st-key-x_"] button, [class*="st-key-sel_"] button {
     min-height:2rem; padding:.1rem .55rem; font-size:.85rem;}
@@ -400,7 +420,7 @@ def job_row(row, key, apps, selectable=True):
 
 
 # --- HEADER ---
-st.markdown(CSS, unsafe_allow_html=True)
+st.markdown(theme_vars() + CSS, unsafe_allow_html=True)
 flush_toasts()  # confirmations queued before the last rerun
 
 
@@ -1474,6 +1494,49 @@ def page_interview():
 
     # ============ 7. RESOURCES ============
     with iv_sub[6]:
+        pb = pc.playbook()
+        if pb:
+            st.markdown("### 🗓️ How people actually prepare")
+            fm = pb.get("funnel_math") or {}
+            if fm:
+                st.info(f"**The funnel:** {fm.get('summary','')}")
+                for d in fm.get("detail", []):
+                    st.markdown(f"- {d}")
+            for ph in pb.get("phases", []):
+                with st.expander(f"**{ph.get('label')}** — {ph.get('focus','')}"):
+                    for a in ph.get("actions", []):
+                        st.markdown(f"- {a}")
+                    if ph.get("output"):
+                        st.success(f"**By the end:** {ph['output']}")
+            wc = pb.get("weekly_cadence") or {}
+            if wc.get("blocks"):
+                st.markdown("#### A sustainable prep week")
+                st.caption(wc.get("summary", ""))
+                st.dataframe(pd.DataFrame(wc["blocks"]), hide_index=True,
+                             width="stretch")
+            for key, title in [("story_bank_method", "Story bank method"),
+                               ("debrief_protocol", "Debrief every interview")]:
+                sec = pb.get(key) or {}
+                if sec:
+                    with st.expander(f"**{title}**"):
+                        st.markdown(sec.get("summary", ""))
+                        for s in sec.get("steps", []):
+                            st.markdown(f"- {s}")
+                        for t in sec.get("coverage_targets", []):
+                            st.markdown(f"- {t}")
+        st.divider()
+        st.markdown("### 🔎 Find real interview experiences")
+        ie_c1, ie_c2 = st.columns(2)
+        ie_company = ie_c1.text_input("Company", value="" if not company else company["name"],
+                                      placeholder="e.g. Amazon")
+        ie_role = ie_c2.text_input("Role", value="supply chain")
+        for s in get_interview_experience_sources(ie_company, ie_role):
+            st.markdown(f"**[{s['name']}]({s.get('search_url', s['url'])})**")
+            st.caption(s["desc"])
+        st.info("Launchers only — we never scrape these. Glassdoor and Blind have the best "
+                "coverage for non-software management roles.")
+        st.divider()
+        st.markdown("### 📚 Resources")
         st.caption("Curated and link-out only — we deliberately do not scrape these. "
                    "Grouped by what you'd reach for.")
 
@@ -1513,50 +1576,6 @@ def page_interview():
                     st.caption(f"_{i['meta']}_")
                 if i.get("caveat"):
                     st.caption(f"⚠️ {i['caveat']}")
-
-        st.divider()
-        st.markdown("### 🔎 Find real interview experiences")
-        ie_c1, ie_c2 = st.columns(2)
-        ie_company = ie_c1.text_input("Company", value="" if not company else company["name"],
-                                      placeholder="e.g. Amazon")
-        ie_role = ie_c2.text_input("Role", value="supply chain")
-        for s in get_interview_experience_sources(ie_company, ie_role):
-            st.markdown(f"**[{s['name']}]({s.get('search_url', s['url'])})**")
-            st.caption(s["desc"])
-        st.info("Launchers only — we never scrape these. Glassdoor and Blind have the best "
-                "coverage for non-software management roles.")
-
-        pb = pc.playbook()
-        if pb:
-            st.divider()
-            st.markdown("### 🗓️ How people actually prepare")
-            fm = pb.get("funnel_math") or {}
-            if fm:
-                st.info(f"**The funnel:** {fm.get('summary','')}")
-                for d in fm.get("detail", []):
-                    st.markdown(f"- {d}")
-            for ph in pb.get("phases", []):
-                with st.expander(f"**{ph.get('label')}** — {ph.get('focus','')}"):
-                    for a in ph.get("actions", []):
-                        st.markdown(f"- {a}")
-                    if ph.get("output"):
-                        st.success(f"**By the end:** {ph['output']}")
-            wc = pb.get("weekly_cadence") or {}
-            if wc.get("blocks"):
-                st.markdown("#### A sustainable prep week")
-                st.caption(wc.get("summary", ""))
-                st.dataframe(pd.DataFrame(wc["blocks"]), hide_index=True,
-                             width="stretch")
-            for key, title in [("story_bank_method", "Story bank method"),
-                               ("debrief_protocol", "Debrief every interview")]:
-                sec = pb.get(key) or {}
-                if sec:
-                    with st.expander(f"**{title}**"):
-                        st.markdown(sec.get("summary", ""))
-                        for s in sec.get("steps", []):
-                            st.markdown(f"- {s}")
-                        for t in sec.get("coverage_targets", []):
-                            st.markdown(f"- {t}")
 
 # === TAB: NETWORKING ===
 def page_networking():

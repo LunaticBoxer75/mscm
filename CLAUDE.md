@@ -171,8 +171,8 @@ with `st.navigation` only the open page runs (0.01–0.25s warm).
 once a day), a 12-job shortlist (full-time, not acted on, posted ≤14 days, max 2 per company,
 Seattle 8 / national 4), follow-ups due, high-priority to-dos, mock/STAR nudges.
 
-**Visual design** — theme in `.streamlit/config.toml` (UW purple `#4B2E83`, lavender sidebar, card
-radii); page styles in `app.py`'s `CSS` block. A slim purple brand bar with the freshness pill replaces
+**Visual design** — theme in `.streamlit/config.toml` with BOTH light and dark variants (the app follows
+the device; never set `base`, which forces one mode). UW purple `#4B2E83` (lavender `#A78BDA` in dark); page styles in `app.py`'s `CSS` block, colored via `PALETTES` for the active mode (`st.context.theme`). A slim purple brand bar with the freshness pill replaces
 the old big repeated title. Job rows are cards: colored score pill (≥90 green, 80s purple, 70s amber),
 title line, meta line with pills (🤖 Claude read · 🏢 size · 📍 metro · salary · status). The CSS targets
 action buttons by key prefix (`st-key-ok_`, `st-key-x_`, `st-key-sel_`) — keep those prefixes if you
