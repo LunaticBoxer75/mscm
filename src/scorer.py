@@ -134,7 +134,8 @@ def batch_score_prompt(jobs):
 ## Scoring Criteria (weights)
 1. Role Relevance (25%): risk / compliance / trust & safety / fraud / operations roles rank HIGHEST
    (her direct Uber background), then supply chain (procurement, sourcing, planning, logistics,
-   inventory), then program / product management.
+   inventory), then program / product management. Technical roles are NOT a priority: a
+   non-technical Program / Product Manager ranks well above a TPM.
 2. Skills Match (20%): overlap with the skills in her profile.
 3. Experience Fit (15%): 4 years (Global SME, Uber Risk & Compliance) plus an MSCM (UW Foster,
    June 2026 - June 2027). Entry-to-mid level.
@@ -153,6 +154,9 @@ def batch_score_prompt(jobs):
   "one year short" in red_flags). "2+ required, 5+ preferred" is fine.
 - Clinical, retail-store, food-service, driving/CDL, warehouse-associate, trades, or engineering
   roles that merely contain words like "operations" or "program manager": <= 20.
+- Technical Program / Project / Product Manager (TPM), or any PM role whose core is engineering /
+  hands-on technical work: score <= 72, red flag "technical role — lower priority". Non-technical
+  program, product and operations roles rank above these.
 - Full-time is her priority; internships are a fallback. A title filed as an internship that is
   really a senior full-time role: say so in red_flags.
 - Only if the posting STATES a start date before her June 2027 graduation, add red flag "start date

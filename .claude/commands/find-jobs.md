@@ -20,12 +20,13 @@ the same change (standing instruction from the user, 2026-09-27).
 
 | Decision | Since | What it means here |
 |---|---|---|
-| **Full-time is the priority; internships are a fallback** | 2026-09-23 | Report full-time first; Pass-2 caps favour FT (30/30 vs 5/5) |
+| **Full-time is the priority; internships are a fallback** | 2026-09-23 | Report full-time first; Pass 2 reads all FT in its bands, internships capped at 5 + 5 |
 | **Role priority: risk / compliance / trust & safety / fraud / ops > supply chain > program/product mgmt** | 2026-09 | Encoded in both scorers |
+| **Technical roles are not a priority — "PM is way above TPM"** | 2026-09-27 | TPM / technical program-project-product manager capped at 72 in both passes (kept, but below every non-technical PM/ops role at 73+) |
 | **Seattle area first (own tab), then big US metros, then the rest** | 2026-09-27 | `src/locations.py`; location points 15/13 Seattle, 11 remote, 10 big metro, 8 rest of WA, 5 elsewhere |
 | **She has 4 years of experience** + MSCM (June 2027) | 2026-09-27 | 5 years required is NOT a blocker; 6 → ≤65; 7+ → ≤40 |
 | **Nothing scoring under 70 is kept — including jobs Claude rated under 70** ("remove low-rated automatically, even the existing ones") | 2026-09-27 | Scraper skips <70; export deletes every <70 row except her tracked/dismissed jobs. Claude-rated ones go to `rejected_urls` (30 days) so the scraper doesn't re-add them |
-| **Claude reads Seattle LinkedIn jobs too** — fetch their descriptions first | 2026-09-27 | Step 3b; LinkedIn search returns no description |
+| **Claude reads every Seattle FT job at 70+ and every national FT job at 85+** ("why have all the high scoring jobs not been ranked?") — LinkedIn descriptions fetched first | 2026-09-27 | Steps 3b + 4a; national 70-84 stays Pass-1-only |
 | **LinkedIn stays daily** despite being ~98% of scrape time | 2026-09-26 | Don't drop or down-sample it |
 | **Bellevue / Kirkland / Redmond not searched** — Seattle's radius covers them (they added 9 of 169) | 2026-09-26 | Their jobs still land in the Seattle tab |
 | **Dropped searches:** "operations leadership development program" (7% relevant), "process improvement analyst" (10%) | 2026-09-27 | Don't re-add |
@@ -152,18 +153,26 @@ from step 1 are the diagnostic.
 
 ---
 
-## 3b. Fetch descriptions for top Seattle LinkedIn jobs [REQUIRED, ~3 min]
+## 3b. Fetch LinkedIn descriptions — Seattle 70+, national 85+ [REQUIRED, ~10 min]
 
-LinkedIn search results have no description, so without this Claude can't read most of the Seattle
-panel (on 2026-09-27: 1,148 Seattle FT jobs at 80+, only 42 readable). One request per posting with
-a 0.6-1.2s pause; it stops itself after 8 empty responses in a row (likely a block) and reports it.
-Fetched rows are rescored with Pass 1 so its years/clearance/sponsorship rules can fire.
+LinkedIn search results have no description, so without this Claude can't read most of either FT
+panel (on 2026-09-27: 1,275 unread Seattle FT jobs and 13,072 national FT jobs had no text). One
+request per posting with a 0.6-1.2s pause. Postings that come back empty (usually expired) go in
+`linkedin_fetch_misses` and are skipped next time. After 8 empties in a row it fetches a known-live
+posting: if that loads, it carries on (expired postings); if not, it stops (LinkedIn is blocking).
+Fetched rows are rescored with Pass 1 so its years/clearance/sponsorship rules can fire. Run four
+shards side by side (`--shard K/N` splits the queue with no overlap; ≈1.6-2 s per posting each):
 
 ```
-cd /Users/aniketsw/workspaces/mscm && python -u -W ignore scripts/backfill_linkedin_descriptions.py --limit 100 --region seattle --min-score 80
+cd /Users/aniketsw/workspaces/mscm && for r in seattle:70 national:85; do for k in 0 1; do
+  python -u -W ignore scripts/backfill_linkedin_descriptions.py --limit 300 --region ${r%:*} \
+    --min-score ${r#*:} --shard $k/2 > /tmp/bf_${r%:*}_$k.log 2>&1 &
+done; done; wait; tail -n 1 /tmp/bf_*.log
 ```
 
-Expect ~80% success. If it stops early for blocks, carry on — Pass 2 just reads fewer Seattle jobs.
+Don't run Pass-1 rescoring (`rescore_all.py`) while these run — it would overwrite freshly fetched rows.
+
+Expect ~85-90% success on fresh postings. If one stops for a block, carry on — Pass 2 reads fewer.
 
 ---
 
@@ -174,34 +183,39 @@ that Pass 1 scored 82+, only 21 held up at 75+ once read, and full-text reading 
 Pass 1 can't see (JPMorgan's 2027 risk program: "no sponsorship, won't sign OPT/CPT" — 72 → 8).
 There is no API key: **you** (via subagents) are the scorer.
 
-**4a. Select candidates** — per-panel latest scrape day (a single global MAX silently zeroes Seattle
-when only the national queries ran), has a description, not already read, per-panel cap. Read-only.
+**4a. Select candidates** — has a description, not already read, per-panel floor and cap. Read-only.
+Standing decision (2026-09-27): **read every Seattle FT job at 70+ and every national FT job at 85+**
+— the old 30-per-panel caps left ~90% of each day's ~300 Seattle / ~150 national arrivals unread, so
+the panels were ordered by Pass-1 ties. Caps are now backlog guards, not the plan; expect ~350-450
+FT candidates (~30-40 batches, ~10-13 agents) on a normal day. Not limited to the latest scrape day,
+so anything a previous run missed is picked up.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 - <<'PY'
 import sqlite3, json, os
 conn = sqlite3.connect("file:data/jobs.db?mode=ro", uri=True); conn.row_factory = sqlite3.Row
 # Caps favour full-time: Pass 2 is the scarce resource and internships are a fallback.
-PANELS = [("seattle_ft","region='seattle' AND job_type!='internship'",70,30),
+PANELS = [("seattle_ft","region='seattle' AND job_type!='internship'",70,600),
           ("seattle_intern","region='seattle' AND job_type='internship'",70,5),
-          ("national_ft","region='national' AND job_type!='internship'",75,30),
+          ("national_ft","region='national' AND job_type!='internship'",85,400),
           ("national_intern","region='national' AND job_type='internship'",75,5)]
 out = []
 for name, where, floor, cap in PANELS:
-    day = conn.execute(f"SELECT substr(MAX(scraped_at),1,10) FROM jobs WHERE {where}").fetchone()[0]
     rows = conn.execute(f"""SELECT job_id,title,company,location,job_type,salary_min,salary_max,description
         FROM jobs WHERE {where} AND score>=? AND LENGTH(description)>200
           AND json_extract(score_breakdown,'$.scorer') IS NULL
-          AND substr(scraped_at,1,10)=? ORDER BY score DESC LIMIT ?""", (floor, day, cap)).fetchall()
-    print(f"{name}: day={day} candidates={len(rows)}")
+          AND COALESCE(date_posted, substr(scraped_at,1,10)) >= date('now','-90 days')
+        ORDER BY score DESC LIMIT ?""", (floor, cap)).fetchall()
+    print(f"{name}: candidates={len(rows)}{'  (HIT CAP — backlog; say so)' if len(rows) == cap else ''}")
     out += [dict(r) for r in rows]
 json.dump(out, open("/tmp/pass2_candidates.json","w"))
 print("total", len(out), "| bytes", os.path.getsize("/tmp/pass2_candidates.json"))
 PY
 ```
 
-Expect ~70 candidates. A panel with 0 is almost always LinkedIn rows (no description) — say so; those
-keep their Pass-1 score and were never read. Never present them as AI-scored.
+A panel short of its daily arrivals is almost always LinkedIn rows whose fetch failed (no
+description) — say so; those keep their Pass-1 score and were never read. Never present them as
+AI-scored. National 70-84 is NOT read (≈9K rows; ranked by Pass 1 only) — the report must say so.
 
 **4b. Build the prompts** — 12 jobs per batch. The builder shows the whole stored description (up to
 10,000 chars) so requirement and legal sections are visible. Clear stale files first:
@@ -230,6 +244,8 @@ hard rules that override them —
 - REQUIRED 7+ years → ≤ 40; 6 years → ≤ 65; **5 years → no cap** (she has 4 + a master's)
 - clinical / retail / driving / warehouse / trades / engineering roles with "operations" or
   "program manager" in the title → ≤ 20
+- TPM / technical program-project-product manager, or a PM role whose core is engineering → ≤ 72
+  ("technical role — lower priority")
 - flag "start date before June 2027" ONLY when the posting states a date — never inferred
 
 Tell agents to touch no database and no other file. Then merge and validate:

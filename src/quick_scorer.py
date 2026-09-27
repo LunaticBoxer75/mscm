@@ -153,6 +153,12 @@ _TECH_SOFT_HEAD = _words(
     r"workday", r"plm", r"salesforce", r"servicenow", r"netsuite", r"mes",
 )
 _TPM_PHRASE = re.compile(r"\btechnical (?:program|project) (?:manager|management|mgr)s?\b|\btpm\b", re.I)
+# Technical PM roles are kept but ranked below every non-technical PM / ops role (user, 2026-09-27:
+# "technical roles are not the highest priority, eg: PM is way above TPM").
+_TECHNICAL_PM = re.compile(
+    r"\btechnical (?:program|project|product) (?:manager|management|mgr|lead|owner)s?\b|\btpms?\b"
+    r"|\b(?:program|project|product) (?:manager|management|mgr|lead)s?\s*[,(\-–|]\s*technical\b", re.I)
+TECHNICAL_PM_CAP = 72.0
 # Function mismatch: finance / HR / marketing / sales / legal. Not excluded (a "Supply Chain
 # Financial Analyst" is borderline-useful) but they cannot reach the top band.
 _FINANCE_FUNCTION = _words(
@@ -689,6 +695,8 @@ def _role_points(t):
         cap, flag = 45.0, "Engineering / technical role"
     elif _TECH_SOFT_ANY.search(_TPM_PHRASE.sub(" ", t)) or _TECH_SOFT_HEAD.search(head):
         best = min(best, 34.0 if (core or _PGM_TITLE.search(t)) else 20.0)
+    if cap is None and _TECHNICAL_PM.search(t):
+        cap, flag = TECHNICAL_PM_CAP, "Technical PM role — ranked below non-technical PM / ops roles"
     other = bool(_OTHER_FUNCTION.search(t)) or (
         bool(_FINANCE_FUNCTION.search(t)) and label != "risk/compliance")
     if other:

@@ -36,14 +36,18 @@ python -m src.pipeline report    # Just generate report
   one-year rule likely rules out an internship inside her first academic year. Report full-time
   first; do not re-elevate internships without being told.
 - **Risk / Compliance / Operations roles rank highest** — they match her actual Uber background.
+- **Technical roles are not a priority — "PM is way above TPM"** (2026-09-27). TPM / technical
+  program-project-product manager titles are capped at 72 in both scorers: kept, but ranked below
+  non-technical PM / ops roles.
 - **Seattle area first** (its own tab), **then big US metros** (Bay Area, New York area, Austin,
   Dallas-Fort Worth, LA, Chicago, Atlanta, Boston, Denver, …), **then everything else**. Defined once in
   `src/locations.py`; region comes from the job's location, not which search found it.
 - **Nothing scoring under 70 is kept — including jobs Claude rated under 70** (user's rule, 2026-09-27).
   The scraper skips <70; the export deletes every <70 row except jobs she applied to/dismissed.
   Claude-rated ones are remembered in `rejected_urls` (30 days) so the scraper can't re-add them.
-- **Claude reads Seattle LinkedIn jobs too**: `scripts/backfill_linkedin_descriptions.py` fetches their
-  descriptions first (LinkedIn search returns none; ~80% success, ~1.6s each).
+- **Claude reads every Seattle FT job at 70+ and national FT at 85+, LinkedIn included**:
+  `scripts/backfill_linkedin_descriptions.py` fetches LinkedIn descriptions first (search returns none;
+  ~1.6-2s each). Expired postings (empty) are remembered in `linkedin_fetch_misses` and skipped.
 - **She has 4 years of experience** + an MSCM (June 2027). "5 years required" is not a blocker.
 
 ## Architecture
@@ -138,8 +142,9 @@ her last-good data read-only with a banner and refuses writes rather than droppi
 
 2. **Pass 2 — AI Scorer** (Claude inline, no API key): Claude Code itself reads descriptions and
    rescores with nuance (e.g. "2+ required, 5+ preferred" vs "must have 9+ years"), stamping
-   `score_breakdown.scorer = "ai"`. `/find-jobs` runs it per-panel on the latest scrape day with
-   caps skewed toward full-time (30 Seattle FT / 30 national FT / 5 + 5 internship).
+   `score_breakdown.scorer = "ai"`. `/find-jobs` reads **every unread Seattle FT job at 70+ and every
+   national FT job at 85+** (~350-450 a day, ~10-13 agents), plus 5 + 5 internships. National 70-84
+   is Pass-1-only.
 
 **Internship vs full-time comes from the TITLE** (`scraper.classify_job_type`): intern/internship/co-op
 or "<season> 20xx". The boards' internship filter is loose — 70% of what it returned were ordinary
