@@ -25,7 +25,7 @@ DST = DATA / "jobs_deploy.db"
 
 
 def _tracked_job_ids():
-    """Job IDs she has an application record for — these survive the prune."""
+    """Job IDs she applied to or dismissed — these survive every prune."""
     import sys
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -40,7 +40,9 @@ def _tracked_job_ids():
             )
         print("WARNING: no MSCM_GITHUB_TOKEN — protecting tracked jobs using the LOCAL "
               "snapshot of her data, which may be stale.")
-    return [a["job_id"] for a in user_store.get("applications") if a.get("job_id")]
+    ids = {a["job_id"] for a in user_store.get("applications") if a.get("job_id")}
+    ids |= {d["job_id"] for d in user_store.get("dismissed_jobs") if d.get("job_id")}
+    return sorted(ids)
 
 
 def main():
@@ -65,9 +67,23 @@ def main():
             AND job_id NOT IN ({placeholders})""",
         tracked,
     ).rowcount
+    # Retention: nothing under 70 is kept (user's rule, 2026-09-27). The scraper
+    # already skips these; this catches rows a rescore pushed below 70. Kept anyway:
+    # jobs she tracked or dismissed (her records), and Pass-2 rows — Claude already
+    # read those, and deleting them would let the next scrape re-insert them at
+    # their keyword score and have Claude re-read them every day.
+    low = src.execute(
+        f"""DELETE FROM jobs
+            WHERE COALESCE(score, 0) < 70
+            AND COALESCE(json_extract(score_breakdown, '$.scorer'), '') != 'ai'
+            AND job_id NOT IN ({placeholders})""",
+        tracked,
+    ).rowcount
     src.commit()
     if pruned:
         print(f"Pruned {pruned} jobs older than 90 days")
+    if low:
+        print(f"Removed {low} jobs scoring below 70")
 
     dst = sqlite3.connect(DST)
 

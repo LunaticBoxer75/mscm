@@ -1,34 +1,56 @@
 # Daily Job Search for Bhumika (MSCM)
 
-Full pipeline: preflight → scrape → Pass 1 quick-score → Pass 2 AI score → 4-panel report → export → publish.
+Full pipeline: preflight → scrape → Pass 1 check → Pass 2 (Claude reads) → 4-panel report → pulse →
+export → publish → health checks.
 
 **Cadence markers:** `[REQUIRED]` every run. `[OPTIONAL]` run if asked or if something looks off.
-`[WEEKLY]` too slow or too broad for a daily run — see the Weekly section, do not put these in the daily path.
+`[WEEKLY]` too slow or too broad for a daily run — see the Weekly section; keep them out of the daily path.
 
 **Interpreter rule.** `python` = mise 3.12.8 and is the ONLY one with `jobspy`. Anything that imports
-`src.scraper`, `src.scorer`, `src.quick_scorer` or `src.reporter` MUST use `python`. Steps that only
-touch `user_store` / `tracker` / `todos` / `interview_prep` / `prep_content` use `python3` (3.9.21),
-which is quieter — it does not emit the `RequestsDependencyWarning`. Do not "normalize" these.
+`src.scraper`, `src.scorer`, `src.quick_scorer`, `src.locations` or `src.reporter` MUST use `python`.
+Steps that only touch `user_store` / `tracker` / `todos` / `interview_prep` / `prep_content` can use
+`python3` (3.9.21), which is quieter. Do not "normalize" these.
+
+**Keep this file current.** When a decision or code change affects the pipeline, update this skill in
+the same change (standing instruction from the user, 2026-09-27).
+
+---
+
+## Standing decisions — do not reverse without asking the user
+
+| Decision | Since | What it means here |
+|---|---|---|
+| **Full-time is the priority; internships are a fallback** | 2026-09-23 | Report full-time first; Pass-2 caps favour FT (30/30 vs 5/5) |
+| **Role priority: risk / compliance / trust & safety / fraud / ops > supply chain > program/product mgmt** | 2026-09 | Encoded in both scorers |
+| **Seattle area first (own tab), then big US metros, then the rest** | 2026-09-27 | `src/locations.py`; location points 15/13 Seattle, 11 remote, 10 big metro, 8 rest of WA, 5 elsewhere |
+| **She has 4 years of experience** + MSCM (June 2027) | 2026-09-27 | 5 years required is NOT a blocker; 6 → ≤65; 7+ → ≤40 |
+| **Nothing scoring under 70 is kept** | 2026-09-27 | Scraper skips <70; export deletes <70 except tracked/dismissed/Pass-2 rows |
+| **LinkedIn stays daily** despite being ~98% of scrape time | 2026-09-26 | Don't drop or down-sample it |
+| **Bellevue / Kirkland / Redmond not searched** — Seattle's radius covers them (they added 9 of 169) | 2026-09-26 | Their jobs still land in the Seattle tab |
+| **Dropped searches:** "operations leadership development program" (7% relevant), "process improvement analyst" (10%) | 2026-09-27 | Don't re-add |
+| **Dedup by posting URL only** — no content/title dedup (the same role in 3 offices shows 3 times) | 2026-09 | Unique index on `job_url` |
+| **90-day prune by posting date** (first-seen date if undated) | 2026-09-26 | Export step |
+| **Old ~250MB git history is NOT purged** (irreversible; not approved) | 2026-09-26 | Never rewrite `main` history |
+| **Company size = curated tiers for the top ~500 employers** (JobSpy only gives Indeed counts) | 2026-09-27 | `config/company_sizes.json` |
+| **Never scrape** LinkedIn people search, Glassdoor, Blind, Levels.fyi (ToS) | 2026-06 | Deep links only |
 
 ---
 
 ## 0. Preflight [REQUIRED]
 
-**Where things live (read once).** Three branches on the `github` remote, deliberately separate:
+**Where things live.** Three branches on the `github` remote, deliberately separate:
 
 | Branch | Holds | Written by |
 |---|---|---|
-| `main` | Code + `content/` only | You, when code changes |
-| `user-data` | `data/user_data.json` — her applications, chats, to-dos, stories, mocks, dismissals | The dashboard + local scripts, via the GitHub API |
-| `jobs-data` | `data/jobs_deploy.db` — ONE commit, force-replaced each run | Step 8 of this skill |
+| `main` | Code + `content/` only | Normal reviewed commits |
+| `user-data` | `data/user_data.json` — her applications, chats, to-dos, stories, mocks, dismissals, visit dates | Dashboard + local scripts, via the GitHub API |
+| `jobs-data` | `data/jobs_deploy.db` — ONE commit, force-replaced each run | Step 8 |
 
-Her data is never on `main`, so nothing in this skill can conflict with or clobber it — there is no
-pull-before-push step for her data any more. `data/user_data.json` and `data/jobs_deploy.db` in the
-working tree are local copies only (gitignored).
+Her data is never on `main`, so nothing here can conflict with or clobber it. `data/user_data.json` and
+`data/jobs_deploy.db` in the working tree are local copies only (gitignored).
 
-**0a. Her store must be reachable.** Steps 6-7 read which jobs she's tracking; without the token they
-fall back to a possibly-stale local snapshot, and the export's prune protection is only as good as
-that snapshot.
+**0a. Her store must be reachable** — the export protects the jobs she applied to or dismissed by
+reading it; without the token it falls back to a possibly-stale local snapshot.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import user_store as u; print('store:', 'REMOTE (user-data branch)' if u.is_remote() else 'LOCAL SNAPSHOT ONLY — add MSCM_GITHUB_TOKEN to .streamlit/secrets.toml'); print(u.stats())"
@@ -44,27 +66,30 @@ cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "PRAGM
 
 ## 1. Scrape [REQUIRED]
 
-Indeed + LinkedIn, 168h lookback (1 week — tolerates missed days). ~936 searches (36 queries × 2 job
-types × 13 locations), **~4.5h** — run it in the background and monitor it. Each search takes ~50s,
-almost all of it LinkedIn deliberately pausing 3-7s between its ~10 page requests (Indeed: <1s). The
-scraper runs 3 searches in parallel (`scrape_workers` in `config/profile.json` search_preferences,
-default 3 — tested with 0 blocks) and keeps every DB write on one thread. If LinkedIn returns a 429,
-all workers pause 2 minutes and the progress line shows `N LinkedIn blocks`; if blocks keep coming,
-lower `scrape_workers`. The user chose on 2026-09-26 to keep LinkedIn daily — do not drop or
-down-sample it without asking. It commits after every query and
-prints one `[done/total] … ~Nm left` line per query, so a hung run shows as a log that stops
-advancing (a slow run keeps printing). "new" counts only rows actually inserted — one row per
-posting URL, enforced by a unique index.
+Indeed + LinkedIn, 168h lookback (tolerates missed days). **~884 searches** (34 queries × 2 job types ×
+13 locations), **~4h** — run it in the background and monitor it.
+
+- Each search takes ~50s, almost all of it LinkedIn pausing 3-7s between its ~10 page requests
+  (Indeed: <1s). 3 searches run in parallel (`scrape_workers` in `config/profile.json`
+  search_preferences, default 3 — tested with 0 blocks); every DB write stays on one thread.
+- Every posting is **scored before it's stored**; under 70 it is skipped (`min_store_score`, default
+  70). The progress line shows `+N new (M below 70 skipped so far)`.
+- **Region comes from the job's location**, not the search that found it; **internship vs full-time
+  comes from the title** (intern / internship / co-op / "<season> 20xx"). New-grad = full-time.
+- A LinkedIn 429 pauses all workers 2 minutes and shows `N LinkedIn blocks`; if blocks keep coming,
+  lower `scrape_workers`.
+- It commits after every search and prints one `[done/total] … ~Nm left` line each, so a hung run is
+  a log that stops advancing. "new" counts only rows actually inserted.
 
 ```
-cd /Users/aniketsw/workspaces/mscm && python -c "
+cd /Users/aniketsw/workspaces/mscm && python -u -W ignore -c "
 from src.scraper import scrape_all_jobs
 jobs = scrape_all_jobs(sites=['indeed', 'linkedin'], hours_old=168)
 print(f'Inserted {len(jobs)} new jobs')
 " 2>&1 | tee /tmp/scrape.log
 ```
 
-Count per-query failures. Use `;` not `&&` — `grep -c` exits 1 when the count is 0:
+Per-search failures (use `;` not `&&` — `grep -c` exits 1 when the count is 0):
 
 ```
 grep -c '\[!\]' /tmp/scrape.log; grep '\[!\]' /tmp/scrape.log | head
@@ -72,10 +97,10 @@ grep -c '\[!\]' /tmp/scrape.log; grep '\[!\]' /tmp/scrape.log | head
 
 ---
 
-## 2. Pass 1 — quick-score, and assert nothing is left unscored [REQUIRED]
+## 2. Pass 1 check — nothing left unscored [REQUIRED]
 
-Rule-based triage over every row. The standing invariant is "no job is ever left unscored" — a row
-with `score IS NULL` is invisible in every panel and in the export. This step heals then asserts.
+Rows are scored at insert, so this should find nothing; it is the safety net for the standing
+invariant "no job is ever left unscored" (a NULL-score row is invisible everywhere).
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python -c "
@@ -87,17 +112,20 @@ if n: print('rescued:', score_all_unscored()); print('unscored after:', get_stat
 assert get_stats()['unscored_jobs'] == 0, 'INVARIANT VIOLATED: unscored jobs remain'"
 ```
 
-If this fails, the offender is almost certainly a row with a falsy title —
-`score_all_unscored()` in `src/quick_scorer.py` skips those forever (line numbers drift — grep for it). Fix the row or the `continue`; do not
-skip the assert.
+**If `src/quick_scorer.py`, `classify_job_type` or `src/locations.py` changed since the last run**, rescore
+everything so old and new rows share one scale (one transaction; never touches Pass-2 rows; dry run
+without `--apply`; don't run it while a scrape is writing):
+
+```
+cd /Users/aniketsw/workspaces/mscm && cp data/jobs.db /tmp/jobs_pre_rescore.db && python scripts/rescore_all.py --apply
+```
 
 ---
 
 ## 3. Run coverage by panel [REQUIRED]
 
-Proves the run actually produced rows in all four panels. `STALE!` means the newest data in the DB
-is not from today — i.e. this run inserted nothing, which a plain GROUP BY would hide. A dead panel
-shows as an explicit `0`, not a missing line.
+Proves the run produced rows in all four panels. `STALE!` means the newest data isn't from today — this
+run inserted nothing. A dead panel shows as an explicit `0`. Counts are post-filter (≥70 only).
 
 ```
 cd /Users/aniketsw/workspaces/mscm && sqlite3 -header -column "file:data/jobs.db?mode=ro" "
@@ -108,8 +136,7 @@ SELECT (SELECT d FROM latest) AS run_date,
        p.region, p.job_type,
        COUNT(j.job_id) AS new_rows,
        SUM(CASE WHEN j.source='indeed'   THEN 1 ELSE 0 END) AS indeed,
-       SUM(CASE WHEN j.source='linkedin' THEN 1 ELSE 0 END) AS linkedin,
-       SUM(CASE WHEN j.job_id IS NOT NULL AND j.source NOT IN ('indeed','linkedin') THEN 1 ELSE 0 END) AS other
+       SUM(CASE WHEN j.source='linkedin' THEN 1 ELSE 0 END) AS linkedin
 FROM panels p
 LEFT JOIN jobs j
        ON j.region = p.region AND j.job_type = p.job_type
@@ -118,27 +145,26 @@ GROUP BY p.region, p.job_type
 ORDER BY p.region, p.job_type;"
 ```
 
-A zero Seattle panel is a real, recurring failure (it happened on 2026-09-14, -19 and -20). If it
-shows, report it — the `[!]` lines from step 1 are the diagnostic.
+A zero Seattle panel is a real, recurring failure (2026-09-14, -19, -20). Report it; the `[!]` lines
+from step 1 are the diagnostic.
 
 ---
 
-## 4. Pass 2 — AI scoring, inline [REQUIRED]
+## 4. Pass 2 — Claude reads the descriptions [REQUIRED]
 
-Pass 1 is keyword-only, and its misses are gross: a podiatrist post scores 95, and Senior TPM roles
-land in the internship panel. Pass 2 is you reading the actual job description. There is no API key
-and no Bedrock call in this path — **you** are the scorer.
+Pass 1 is keyword rules; Pass 2 is reading the actual posting. It matters: on 2026-09-26, of 250 jobs
+that Pass 1 scored 82+, only 21 held up at 75+ once read, and full-text reading caught disqualifiers
+Pass 1 can't see (JPMorgan's 2027 risk program: "no sponsorship, won't sign OPT/CPT" — 72 → 8).
+There is no API key: **you** (via subagents) are the scorer.
 
-**4a. Select candidates.** Per-panel latest scrape day (a single global MAX silently zeroes Seattle
-when only the national queries ran), description gate, per-panel cap. Read-only.
+**4a. Select candidates** — per-panel latest scrape day (a single global MAX silently zeroes Seattle
+when only the national queries ran), has a description, not already read, per-panel cap. Read-only.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 - <<'PY'
 import sqlite3, json, os
 conn = sqlite3.connect("file:data/jobs.db?mode=ro", uri=True); conn.row_factory = sqlite3.Row
-# Caps are deliberately lopsided toward full-time. Pass 2 is the scarce resource
-# (you reading descriptions), and as of 2026-09-23 internships are a FALLBACK ONLY —
-# full-time is the priority. Do not rebalance these without the user saying so.
+# Caps favour full-time: Pass 2 is the scarce resource and internships are a fallback.
 PANELS = [("seattle_ft","region='seattle' AND job_type!='internship'",70,30),
           ("seattle_intern","region='seattle' AND job_type='internship'",70,5),
           ("national_ft","region='national' AND job_type!='internship'",75,30),
@@ -146,8 +172,7 @@ PANELS = [("seattle_ft","region='seattle' AND job_type!='internship'",70,30),
 out = []
 for name, where, floor, cap in PANELS:
     day = conn.execute(f"SELECT substr(MAX(scraped_at),1,10) FROM jobs WHERE {where}").fetchone()[0]
-    rows = conn.execute(f"""SELECT job_id,title,company,location,job_type,salary_min,salary_max,
-               substr(description,1,4000) AS description
+    rows = conn.execute(f"""SELECT job_id,title,company,location,job_type,salary_min,salary_max,description
         FROM jobs WHERE {where} AND score>=? AND LENGTH(description)>200
           AND json_extract(score_breakdown,'$.scorer') IS NULL
           AND substr(scraped_at,1,10)=? ORDER BY score DESC LIMIT ?""", (floor, day, cap)).fetchall()
@@ -158,123 +183,126 @@ print("total", len(out), "| bytes", os.path.getsize("/tmp/pass2_candidates.json"
 PY
 ```
 
-Expect ~30-40 candidates / ~150KB. If a panel returns 0, say so in the report and say why: 65% of
-the DB (every LinkedIn row) has `description=''`, so the description gate excludes it. Those rows
-keep their Pass-1 score and were never read by anyone — never present them as AI-scored.
+Expect ~70 candidates. A panel with 0 is almost always LinkedIn rows (no description) — say so; those
+keep their Pass-1 score and were never read. Never present them as AI-scored.
 
-**4b. Build the prompts** (15 jobs per batch; the prompt builder truncates each description at 2000
-chars, so a batch is ~35K chars):
+**4b. Build the prompts** — 12 jobs per batch. The builder shows the whole stored description (up to
+10,000 chars) so requirement and legal sections are visible. Clear stale files first:
 
 ```
-cd /Users/aniketsw/workspaces/mscm && python -c "
+cd /Users/aniketsw/workspaces/mscm && rm -f /tmp/pass2_batch*.txt /tmp/pass2_scores*.json && python -c "
 import json
 from src.scorer import batch_score_prompt
 jobs = json.load(open('/tmp/pass2_candidates.json'))
-for i in range(0, len(jobs), 15):
-    path = f'/tmp/pass2_batch{i//15+1}.txt'
-    open(path,'w').write(batch_score_prompt(jobs[i:i+15]))
-    print(path, len(jobs[i:i+15]), 'jobs')
+for i in range(0, len(jobs), 12):
+    path = f'/tmp/pass2_batch{i//12+1:02d}.txt'
+    open(path,'w').write(batch_score_prompt(jobs[i:i+12]))
+    print(path, len(jobs[i:i+12]), 'jobs')
 "
 ```
 
-**4c. Score them.** `Read` each `/tmp/pass2_batchN.txt`, score every job in it yourself, and write
-the combined JSON array for ALL batches to `/tmp/pass2_scores.json` — freshly, every run (a leftover
-file from yesterday will happily re-stamp yesterday's scores). One entry per job:
+**4c. Score them with parallel subagents** (standing preference: delegate scoring). Give each agent
+≤ 3 batch files and have it write `/tmp/pass2_scores_partN.json`: a JSON array, one entry per job —
+`{"job_id", "score" (int 0-100), "reasoning", "highlights", "red_flags"}` — then verify with python3
+that it parses, the count matches the `### Job` headers, and every job_id appears exactly once. The
+rubric is inside each batch file (`src/scorer.py` `batch_score_prompt`): 7 weighted dimensions PLUS
+hard rules that override them —
 
-```json
-[{"job_id": "...", "score": 0, "reasoning": "1-2 sentences", "highlights": ["..."], "red_flags": ["..."]}]
+- U.S. citizen / security clearance / "U.S. person" / ITAR required → ≤ 15 ("not F-1 eligible")
+- won't sponsor, or won't support STEM OPT / no E-Verify → ≤ 40
+- REQUIRED 7+ years → ≤ 40; 6 years → ≤ 65; **5 years → no cap** (she has 4 + a master's)
+- clinical / retail / driving / warehouse / trades / engineering roles with "operations" or
+  "program manager" in the title → ≤ 20
+- flag "start date before June 2027" ONLY when the posting states a date — never inferred
+
+Tell agents to touch no database and no other file. Then merge and validate:
+
+```
+cd /Users/aniketsw/workspaces/mscm && python3 - <<'PY'
+import json, glob, collections
+cands = {c["job_id"] for c in json.load(open("/tmp/pass2_candidates.json"))}
+allsc = [e for f in sorted(glob.glob("/tmp/pass2_scores_part*.json")) for e in json.load(open(f))]
+ids = collections.Counter(str(e["job_id"]) for e in allsc)
+problems = {"missing": cands - set(ids), "extra": set(ids) - cands,
+            "duplicate": {i for i, n in ids.items() if n > 1},
+            "bad_score": {e["job_id"] for e in allsc if not isinstance(e.get("score"), (int, float)) or not 0 <= e["score"] <= 100}}
+assert not any(problems.values()), problems
+json.dump(allsc, open("/tmp/pass2_scores.json", "w")); print(f"OK {len(allsc)} scores → /tmp/pass2_scores.json")
+PY
 ```
 
-Score with the 7 documented dimensions (role relevance 25 / skills 20 / experience fit 15 /
-location 15 / company tier 10 / growth 10 / visa 5). Read the description for the things Pass 1
-cannot see: "2+ required, 5+ preferred" is fine, "must have 9+ years" is not; a clinical or retail
-role with "Program Manager" in the title is a 10, not a 95; an internship panel entry that is
-actually a senior FT req should be called out in `red_flags`.
-
-**4d. Write back — one transaction, one connection.** Do NOT loop `scraper.update_job_score` (new
-connection + DDL + commit + a dead Firestore import per row) and do NOT use
-`scorer.parse_batch_scores` (silently returns `[]` on a JSON error and never reports what it
-dropped). This exact script is the safe pattern: it commits the good rows FIRST, then reports
-mismatches — reporting inside the transaction rolls back the whole batch over one bad id.
+**4d. Write back — one transaction, one connection.** Commits the good rows FIRST, then reports
+mismatches (reporting inside the transaction would roll back the batch over one bad id).
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 - <<'PY'
 import sqlite3, json, datetime, sys
-DB = "data/jobs.db"
-ai = json.load(open("/tmp/pass2_scores.json"))   # the JSON array Claude produced
+ai = json.load(open("/tmp/pass2_scores.json"))
 assert isinstance(ai, list) and ai, "pass2_scores.json must be a non-empty JSON array"
 now = datetime.datetime.now().isoformat()
 rows = [(e["score"], json.dumps({**e, "scorer": "ai"}), now, str(e["job_id"])) for e in ai]
-conn = sqlite3.connect(DB, timeout=60)
+conn = sqlite3.connect("data/jobs.db", timeout=60)
 conn.execute("PRAGMA busy_timeout=60000")
 try:
-    with conn:                       # commits the good rows
-        cur = conn.executemany(
-            "UPDATE jobs SET score=?, score_breakdown=?, scored_at=? WHERE job_id=?", rows)
-        written = cur.rowcount
-    if written != len(rows):         # report AFTER commit, never inside the txn
-        missing = [r[3] for r in rows
-                   if not conn.execute("SELECT 1 FROM jobs WHERE job_id=?", (r[3],)).fetchone()]
-        print(f"WARN wrote {written}/{len(rows)}; unknown job_ids: {missing}")
-        sys.exit(1)
+    with conn:
+        written = conn.executemany(
+            "UPDATE jobs SET score=?, score_breakdown=?, scored_at=? WHERE job_id=?", rows).rowcount
+    if written != len(rows):
+        missing = [r[3] for r in rows if not conn.execute("SELECT 1 FROM jobs WHERE job_id=?", (r[3],)).fetchone()]
+        print(f"WARN wrote {written}/{len(rows)}; unknown job_ids: {missing}"); sys.exit(1)
     print(f"OK wrote {written}/{len(rows)} scores")
 finally:
     conn.close()
 PY
 ```
 
-400 rows land in ~0.04s. The `"scorer": "ai"` stamp is what makes 4a idempotent — re-running the day
-after will not re-pick the same jobs.
+The `"scorer": "ai"` stamp makes 4a idempotent and protects these rows from the <70 cleanup and from
+`rescore_all.py`.
 
-**4e. Verify.** Re-run 4a. Every panel must now report `candidates=0`. If not, the missing job_ids
-were dropped — score them before moving on.
+**4e. Verify.** Re-run 4a: every panel must report `candidates=0`.
 
 ---
 
 ## 5. 4-panel report [REQUIRED]
 
-Thresholds match what the export actually publishes (flat 70), so nothing appears in the terminal
-that she cannot then find on the dashboard. Dismissed ids are subtracted from `user_store`.
+Same thresholds the dashboard publishes, so nothing appears here that she can't find there.
 
 ```
-cd /Users/aniketsw/workspaces/mscm && python3 - <<'PY'
+cd /Users/aniketsw/workspaces/mscm && python -W ignore - <<'PY'
 import sqlite3, sys
 sys.path.insert(0, ".")
 from src import user_store
+from src.locations import metro_of
 dismissed = {d.get("job_id") for d in user_store.get("dismissed_jobs") if d.get("job_id")}
 conn = sqlite3.connect("file:data/jobs.db?mode=ro", uri=True)
-PANELS = [("SEATTLE & AREA - FULL-TIME (top priority)",   "region='seattle' AND job_type!='internship'", 70, 12),
-          ("REST OF USA - FULL-TIME",                     "region='national' AND job_type!='internship'", 75, 12),
-          ("SEATTLE & AREA - INTERNSHIPS (fallback)",     "region='seattle' AND job_type='internship'",  70, 5),
-          ("REST OF USA - INTERNSHIPS (fallback)",        "region='national' AND job_type='internship'",  75, 5)]
+PANELS = [("SEATTLE AREA - FULL-TIME (top priority)",          "region='seattle' AND job_type!='internship'", 70, 12),
+          ("BIG CITIES & REST OF USA - FULL-TIME",             "region='national' AND job_type!='internship'", 75, 12),
+          ("SEATTLE AREA - INTERNSHIPS (fallback)",            "region='seattle' AND job_type='internship'",  70, 5),
+          ("USA - INTERNSHIPS (fallback)",                     "region='national' AND job_type='internship'",  75, 5)]
 for name, where, floor, lim in PANELS:
     rows = conn.execute(f"""SELECT job_id, score, title, company, location, salary_min, salary_max, job_url,
                json_extract(score_breakdown,'$.scorer') AS scorer
-        FROM jobs WHERE {where} AND score>=? AND (dismissed IS NULL OR dismissed=0)
+        FROM jobs WHERE {where} AND score>=?
         ORDER BY score DESC, scraped_at DESC LIMIT ?""", (floor, lim + len(dismissed))).fetchall()
     rows = [r for r in rows if r[0] not in dismissed][:lim]
     print(f"\n=== {name} ({len(rows)}) ===")
     for jid, sc, t, c, loc, smin, smax, url, scorer in rows:
         sal = f" | ${int(smin/1000)}K-${int(smax/1000)}K" if smin and smax else ""
+        metro = f" [{metro_of(loc)}]" if metro_of(loc) else ""
         tag = "" if scorer == "ai" else "  (quick score only)"
-        print(f"  [{int(sc)}] {t} @ {c} - {loc}{sal}{tag}\n      {url}")
+        print(f"  [{sc:.0f}] {t} @ {c} - {loc}{metro}{sal}{tag}\n      {url}")
 conn.close()
 PY
 ```
 
-Present it in exactly this order: **both full-time panels first, Seattle before national, then the
-two internship panels clearly labelled as fallback.** Full-time is the priority as of 2026-09-23;
-internships only matter if a full-time role does not land. Lead the report with full-time — do not
-open with internships even if an internship happens to score highest.
-
-Keep the `(quick score only)` marker visible. It is the difference between "Claude read this JD" and
-"a keyword matched a title."
+Present it in this order: **both full-time panels first (Seattle area, then big cities & rest of USA),
+then the two internship panels labelled fallback.** Lead with full-time even if an internship scores
+highest. Keep the `(quick score only)` marker — it's the difference between "Claude read this" and "a
+keyword matched."
 
 ---
 
-## 6. Her pulse — follow-ups, to-dos, prep [REQUIRED, ~2s total]
-
-Follow-ups due today or earlier (applied / interviewing only):
+## 6. Her pulse — follow-ups, to-dos, prep [REQUIRED, ~2s]
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python -W ignore -c "
@@ -287,15 +315,11 @@ for f in rows:
 "
 ```
 
-Open high-priority to-dos:
-
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src.todos import get_todos
 for t in get_todos('open'):
     if t.get('priority') == 'high': print('  HIGH:', t['item'])"
 ```
-
-STAR story coverage (behavioural themes with no story yet):
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src.interview_prep import story_coverage
@@ -306,14 +330,16 @@ c = story_coverage(); print(f\"STAR themes covered {len(c['covered'])}/{len(c['c
 
 ## 7. Export the deploy DB [REQUIRED]
 
-Keeps jobs scoring **70+, full-time and internships alike** (the old 55 internship floor is gone —
-the UW CPT one-year rule makes internships a fallback). **DROPS** the legacy aux tables
-(`applications`, `coffee_chats`, `todos`, `interview_recs`, `star_stories`) so a stale copy cannot
-shadow the real store — her data lives in `data/user_data.json` and must never be copied here.
-**Destructive:** it also `DELETE`s postings whose posting date (or, if undated, first-seen date) is
-over 90 days old from `data/jobs.db`, the only full copy — protected only by job_ids she has an
-application record for. The first run after 2026-09-26 prunes ~13K rows (the old logic keyed on
-first-seen date and missed them). Report the prune count it prints.
+Builds `data/jobs_deploy.db` from jobs scoring 70+ (full-time and internships alike). **Destructive on
+`data/jobs.db`, the only full copy**, in two ways:
+
+1. **90-day prune** — postings whose posting date (first-seen if undated) is over 90 days old.
+2. **Under-70 cleanup** — any row scoring below 70, EXCEPT jobs she applied to or dismissed and
+   Pass-2 rows (deleting a read row lets the next scrape re-insert it for Claude to re-read daily).
+
+Both protect her tracked/dismissed job_ids via `user_store`; with no token and no local snapshot the
+script refuses to prune. Report both counts it prints. Before the first run after a big scoring change,
+back up: `cp data/jobs.db /tmp/jobs_pre_export.db`.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python scripts/export_deploy_db.py
@@ -323,24 +349,21 @@ cd /Users/aniketsw/workspaces/mscm && python scripts/export_deploy_db.py
 
 ## 8. Publish [REQUIRED]
 
-Publishes the deploy DB to the `jobs-data` branch as a single, history-free commit. The running
-dashboard notices within ~10 minutes and swaps it in — no redeploy, no push to `main`.
+Publishes the deploy DB to the `jobs-data` branch as a single, history-free commit. The dashboard
+notices within ~10 minutes and swaps it in — no redeploy, no push to `main`.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python scripts/publish_jobs_db.py
 ```
 
-The script force-pushes `refs/heads/jobs-data` ONLY — that branch is designed to hold one commit.
-Never force-push `main` or `user-data`. It refuses files over 95MB (GitHub's limit is 100MB).
-
-Push `main` only when code or `content/` changed, as a normal reviewed commit — never as part of the
-daily data refresh.
+It force-pushes `refs/heads/jobs-data` ONLY. Never force-push `main` or `user-data`. It refuses files
+over 95MB. Push `main` only when code or `content/` changed, as a normal reviewed commit.
 
 ---
 
 ## Health checks
 
-Run all five after step 8. Any failure is a silent-failure alarm — report it, do not swallow it.
+Run all after step 8. Any failure is a silent-failure alarm — report it.
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python -c "
@@ -348,6 +371,20 @@ from src.reporter import get_stats
 s = get_stats(); print(s)
 assert s['unscored_jobs'] == 0, 'unscored jobs remain'"
 ```
+
+Only protected rows below 70 (Pass-2 reads and her tracked/dismissed jobs) should remain:
+
+```
+cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "SELECT COUNT(*) AS unprotected_below_70 FROM jobs WHERE score < 70 AND COALESCE(json_extract(score_breakdown,'\$.scorer'),'') != 'ai';"
+```
+
+(A small non-zero count is her tracked/dismissed jobs; thousands means the cleanup didn't run.)
+
+```
+cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "SELECT COUNT(*)-COUNT(DISTINCT job_url) AS duplicate_urls FROM jobs WHERE job_url!='';"
+```
+
+(Should be 0 — the unique URL index enforces it; if not, `python3 scripts/dedupe_jobs.py --apply`.)
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import prep_content; bad={k:v for k,v in prep_content.status().items() if not isinstance(v,int) or v==0}; print('CONTENT UNHEALTHY:',bad) if bad else print('content OK:',sum(prep_content.status().values()),'rows'); __import__('sys').exit(1 if bad else 0)"
@@ -357,98 +394,88 @@ cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import prep_content; 
 cd /Users/aniketsw/workspaces/mscm && python3 -c "from src import user_store; s=user_store.stats(); print(s); assert sum(s.values())>0, 'her store read as empty — check MSCM_GITHUB_TOKEN / the user-data branch'"
 ```
 
-One row per posting (the unique URL index should make this impossible; if it isn't 0, the index was
-dropped — re-run `python3 scripts/dedupe_jobs.py --apply`):
-
-```
-cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "SELECT COUNT(*)-COUNT(DISTINCT job_url) AS duplicate_urls FROM jobs WHERE job_url!='';"
-```
-
 Every dashboard page renders (headless; forces MSCM_STORE_MODE=file, never touches GitHub):
 
 ```
 cd /Users/aniketsw/workspaces/mscm && python scripts/smoke_test_pages.py
 ```
 
-Then state, in the summary you give her: new rows inserted, Pass-2 jobs actually AI-scored, rows
-exported, prune count, deploy DB size.
+Then summarize for her: new rows inserted (and skipped below 70), Pass-2 jobs actually read, rows
+exported, prune + cleanup counts, deploy DB size.
 
 ---
 
 ## Failure modes
 
-- **`database is locked`** — the Streamlit app or another run holds the WAL. The Pass-2 writeback
-  already sets `timeout=60` + `PRAGMA busy_timeout=60000`; wait it out, or close the dashboard.
-  A `mode=ro` read of a WAL DB can also fail transiently with error 14 while a writer commits —
-  retry once. Never add `immutable=1` to work around it: that returns torn reads.
-- **`database disk image is malformed`** — stop immediately. Do not export, do not push (the export
-  rebuilds the deploy DB from this file and prunes it). Run
-  `sqlite3 "file:data/jobs.db?mode=ro" "PRAGMA integrity_check;"`, copy the file aside, and recover
-  from the last good state before running anything else.
-- **"Saving is paused" banner / `StoreError`** — GitHub unreachable or the token expired. The
-  dashboard serves her last-good data read-only and refuses writes rather than dropping them.
-  Check the token's expiry; nothing needs recovering.
-- **`jobs-data` publish rejected** — usually auth. Never "fix" it by committing the DB to `main`:
-  that's the 250MB-history problem this layout exists to stop.
-- **Scrape hangs** — the `[done/total]` log stops advancing. Rows up to the last finished query are
-  already committed. Kill it (`pkill -f scrape_all_jobs`), report where it stopped, re-run step 1 —
-  already-inserted postings are skipped by URL.
-- **A panel reports 0 candidates in Pass 2** — almost always empty descriptions, not "nothing good".
-  Say which panel and why; do not report those jobs as AI-scored.
+- **`database is locked`** — another writer holds the DB (a scrape, the dashboard, a rescore). The
+  scraper's own connection gives up after 5s, so never run `rescore_all.py` or the export while a
+  scrape is writing. Writebacks set `busy_timeout=60000`. A `mode=ro` read can fail transiently with
+  error 14 while a writer commits — retry once. Never use `immutable=1` (torn reads).
+- **`database disk image is malformed`** — stop. Don't export or publish. Run
+  `sqlite3 "file:data/jobs.db?mode=ro" "PRAGMA integrity_check;"`, copy the file aside, recover from
+  the last good state (backups: `/tmp/jobs_pre_*.db`).
+- **"Saving is paused" banner / `StoreError`** — GitHub unreachable or the token expired. The dashboard
+  serves her last-good data read-only and refuses writes rather than dropping them. Check the token's
+  expiry.
+- **`jobs-data` publish rejected** — usually auth. Never "fix" it by committing the DB to `main`.
+- **Scrape hangs** — the `[done/total]` log stops advancing. Everything up to the last finished search
+  is committed. Kill it (`pkill -f scrape_all_jobs`), report where it stopped, re-run step 1.
+- **LinkedIn blocks keep coming** (`N LinkedIn blocks` rising) — lower `scrape_workers` to 2.
+- **A panel reports 0 Pass-2 candidates** — almost always missing descriptions. Say which panel and why.
 
 ---
 
 ## Weekly / optional — keep OUT of the daily path
 
-- **[WEEKLY] LinkedIn description backfill.** Every LinkedIn row (65% of the DB) has
-  `description=''` because `linkedin_fetch_description` is never passed, which is why Pass 2 can
-  only see a third of the corpus and why the years-of-experience caps never fire on LinkedIn rows.
-  A fetch costs ~0.73s per job serially, so the whole corpus is ~23h — never daily. Backfill the
-  top ~300 LinkedIn rows by quick-score with empty descriptions (~3.5 min), with 0.3-0.5s jitter to
-  stay off LinkedIn's 429 path, and count "fetched N, got description for M" — the jobspy helper
-  swallows every error and returns `{}`, so a silent 429 storm is otherwise invisible.
-- **[WEEKLY] Broad Pass 2.** Pass 2 at `score>=40` over the whole pool is ~51K jobs / ~2,500
-  batches. Do not attempt it in a daily run. The daily band in step 4 (export floor, per-panel cap,
-  this run's day only) is the honest scope.
-- **[OPTIONAL] Markdown report file:**
-  `python -c "from src.reporter import generate_daily_report; generate_daily_report(min_score=70, limit=50)"`
-- **[OPTIONAL] Tracker + referrals:**
-  `python -c "from src.tracker import generate_tracker_report; print(generate_tracker_report())"`
-- **[OPTIONAL] Skills insights:**
-  `python -c "from src.skills_insights import analyze_skills; r=analyze_skills(min_score=70); print(r['total'], [(x['skill'], x['pct']) for x in r['technical'][:5]])"`
-  Note: run this against `data/jobs.db`, not the deploy copy — the export truncates descriptions to
-  800 chars, which drops the Excel hit rate from 72% to 11%.
-- **[WEEKLY] H1B sponsor staleness (nag, do not auto-download):**
+- **[WEEKLY] Pass-2 backfill of the existing top.** Daily Pass 2 only reads the latest scrape day. Once
+  a week, read the top ~150 Seattle + ~100 national full-time jobs with descriptions that haven't been
+  read (same 4b-4d flow, selecting by score across all days). Done 2026-09-26 for the first 250.
+- **[WEEKLY] LinkedIn description backfill.** LinkedIn rows (~65%) have no description because
+  `linkedin_fetch_description` isn't passed — one extra LinkedIn request per posting. Backfill the top
+  ~300 LinkedIn rows by score (~3.5 min, 0.3-0.5s jitter) and count "fetched N, got description for M"
+  (the jobspy helper swallows errors and returns `{}`).
+- **[WHEN RULES CHANGE] Evaluate the scorer:** `python scripts/eval_quick_scorer.py` (read-only;
+  ~550 hand-labelled rows — labels were assigned by the agent that wrote the rules, so also spot-check
+  big movers yourself). Then `scripts/rescore_all.py --apply` (step 2).
+- **[QUARTERLY] Company sizes:** rebuild `config/company_sizes.json` for the current top ~500 employers
+  (tiers, parent roll-up, staffing flag; Wikipedia-verify large ones).
+- **[WEEKLY] H1B sponsor staleness (nag, don't auto-download):**
   `python3 -c "import json; d=json.load(open('config/h1b_sponsors_verified.json')); print(d['fiscal_year'])"`
+- **[OPTIONAL] Markdown report:** `python -c "from src.reporter import generate_daily_report; generate_daily_report(min_score=70, limit=50)"`
+- **[OPTIONAL] Tracker report:** `python -c "from src.tracker import generate_tracker_report; print(generate_tracker_report())"`
+- **[OPTIONAL] Skills insights** (run against `data/jobs.db`; the deploy copy truncates descriptions):
+  `python -c "from src.skills_insights import analyze_skills; r=analyze_skills(min_score=70); print(r['total'], [(x['skill'], x['pct']) for x in r['technical'][:5]])"`
 - **[OPTIONAL] Import coffee-chat action items into to-dos:**
   `python3 -c "from src.todos import import_coffee_chat_actions; print('imported', import_coffee_chat_actions())"`
-  One batched write to her store (zero if nothing is new).
 
 ---
 
 ## Known gaps — do not claim these work
 
-- **LinkedIn rows have no description** (~65% of the DB) — Pass 2 can't read them and Pass 1's
-  description rules don't fire on them. See the weekly backfill above.
-- **`config/profile.json`'s `distance_miles`, `min_salary` and `exclude_terms` are read by nothing.**
-  Do not tell her 10+-year or unsalaried postings were filtered out.
-- **Company size isn't stored** — the scraper drops JobSpy's employee-count field, so nothing can
-  sort by it yet.
+- **LinkedIn rows have no description** — Pass 2 can't read them and Pass 1's description rules
+  (years, clearance, sponsorship) can't fire. Marked `(quick score only)`.
+- **Company size covers only the top ~500 employers**; everyone else shows no size. Staffing agencies
+  show "(via agency)", not a size.
+- **The same role posted in several offices appears several times** — by decision (no content dedup).
+- **`config/profile.json`'s `distance_miles`, `min_salary`, `exclude_terms` are read by nothing.**
+- **Most open full-time postings expect a start before her June 2027 graduation**; the rubric flags it
+  only where a posting states a date.
 
 ---
 
 ## Key Files
 
-- Candidate profile + scoring weights: `config/profile.json`
-- Search terms (36 queries × 17 locations × 2 job types, Indeed + LinkedIn only):
-  `config/search_queries.json`
-- **Local source of truth (jobs):** `data/jobs.db` — gitignored, ~280MB, full history
-- **Dashboard artifact (jobs only, score 70+):** `data/jobs_deploy.db` — published to the
-  `jobs-data` branch by `scripts/publish_jobs_db.py`; the dashboard downloads it (`src/jobs_data.py`)
-- **Her data:** `user-data` branch, `data/user_data.json`, via `src/user_store.py` — applications, coffee chats, to-dos,
-  interview recs, STAR stories, mock sessions, dismissed jobs. Never copy it into a jobs DB.
-- Prep corpus: `content/*.json` via `src/prep_content.py`
-- Pass 1: `src/quick_scorer.py` · Pass 2 prompt: `src/scorer.py:101 batch_score_prompt`
-- Scraper: `src/scraper.py` · Export: `scripts/export_deploy_db.py` · Dashboard: `app.py`
-- Logs from the last run: `/tmp/scrape.log`, `/tmp/pass2_candidates.json`, `/tmp/pass2_batch*.txt`,
-  `/tmp/pass2_scores.json`
+- Candidate profile, search prefs (`min_store_score`, `scrape_workers`, locations): `config/profile.json`
+- Searches (34): `config/search_queries.json` · Company sizes: `config/company_sizes.json`
+- **Jobs (local, full):** `data/jobs.db` — gitignored; one row per posting URL; only 70+ kept
+- **Dashboard jobs:** `data/jobs_deploy.db` → `jobs-data` branch (`scripts/publish_jobs_db.py`),
+  downloaded by the app (`src/jobs_data.py`)
+- **Her data:** `user-data` branch `data/user_data.json` via `src/user_store.py`
+- Pass 1: `src/quick_scorer.py` · Pass 2 rubric: `src/scorer.py` `batch_score_prompt`
+- Where a job is: `src/locations.py` · Company size: `src/company_size.py`
+- Scraper: `src/scraper.py` (`classify_job_type`, parallel fetch) · Export: `scripts/export_deploy_db.py`
+- One-off/maintenance: `scripts/rescore_all.py`, `scripts/dedupe_jobs.py`, `scripts/eval_quick_scorer.py`,
+  `scripts/smoke_test_pages.py`
+- Prep content: `content/*.json` via `src/prep_content.py` · Dashboard: `app.py`
+- Last-run artifacts: `/tmp/scrape.log`, `/tmp/pass2_candidates.json`, `/tmp/pass2_batch*.txt`,
+  `/tmp/pass2_scores*.json`

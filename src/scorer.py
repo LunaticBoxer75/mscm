@@ -23,7 +23,7 @@ SCORING_PROMPT = """You are a career advisor scoring job listings for a candidat
 ## Scoring Criteria (weights in parentheses)
 1. **Role Relevance** (25%): How well does the job title and responsibilities align with target roles?
 2. **Skills Match** (20%): How many of the candidate's skills (fraud detection, risk analysis, process optimization, data analysis, project management, SQL, automation) are relevant?
-3. **Experience Fit** (15%): Is the experience level appropriate? (Candidate has 3 years. Entry-level to mid-level roles are ideal. Senior/Director roles should score lower.)
+3. **Experience Fit** (15%): Is the experience level appropriate? (Candidate has 4 years. Entry-level to mid-level roles are ideal. Senior/Director roles should score lower.)
 4. **Location Match** (15%): Is it in Seattle/Bellevue/Redmond/Kirkland/WA area or remote?
 5. **Company Tier** (10%): Is this a well-known company or one aligned with supply chain (Amazon, Boeing, Costco, etc.)?
 6. **Growth Potential** (10%): Does this role offer career growth into supply chain leadership?
@@ -111,8 +111,11 @@ def batch_score_prompt(jobs):
             salary_str = f"${job['salary_min']:,.0f}+"
 
         description = job.get("description", "No description available")
-        if len(description) > 2000:
-            description = description[:2000] + "...[truncated]"
+        # The whole stored description (the scraper keeps 10,000 chars). At 2,000 the
+        # requirements and legal sections — years, citizenship, sponsorship — were
+        # usually cut off, so the hard rules couldn't fire.
+        if len(description) > 10000:
+            description = description[:10000] + "...[truncated]"
 
         jobs_text.append(f"""### Job {i} (ID: {job['job_id']})
 **Title:** {job.get('title', 'Unknown')}
@@ -128,14 +131,34 @@ def batch_score_prompt(jobs):
 ## Candidate Profile
 {profile_summary}
 
-## Scoring Criteria
-1. Role Relevance (25%): Alignment with SCM/ops/PM target roles
-2. Skills Match (20%): Overlap with candidate's skills
-3. Experience Fit (15%): Appropriate for 3yr experience level
-4. Location Match (15%): Seattle/WA area or remote
-5. Company Tier (10%): Known SCM companies
-6. Growth Potential (10%): Career trajectory
-7. Visa Friendliness (5%): OPT/H1B likelihood
+## Scoring Criteria (weights)
+1. Role Relevance (25%): risk / compliance / trust & safety / fraud / operations roles rank HIGHEST
+   (her direct Uber background), then supply chain (procurement, sourcing, planning, logistics,
+   inventory), then program / product management.
+2. Skills Match (20%): overlap with the skills in her profile.
+3. Experience Fit (15%): 4 years (Global SME, Uber Risk & Compliance) plus an MSCM (UW Foster,
+   June 2026 - June 2027). Entry-to-mid level.
+4. Location Match (15%): Seattle & Eastside > remote > rest of WA > rest of USA.
+5. Company Tier (10%): established employers, especially ones that sponsor visas.
+6. Growth Potential (10%): career trajectory.
+7. Visa Friendliness (5%): F-1 student -> OPT (STEM, 3 years) -> H-1B.
+
+## Hard rules — read the description for these; they override the weights
+- Requires U.S. citizenship, a security clearance, or "U.S. person" status (ITAR/EAR): score <= 15,
+  red flag "not F-1 eligible". She cannot legally take these.
+- States it will not sponsor now or in the future, or won't support STEM OPT / doesn't use E-Verify:
+  score <= 40 and say which in red_flags.
+- REQUIRED experience (not "preferred"), vs her 4 years + master's: 7+ years -> <= 40;
+  6 years -> <= 65; 5 years -> NO cap (one year short is routinely accepted with a master's; note
+  "one year short" in red_flags). "2+ required, 5+ preferred" is fine.
+- Clinical, retail-store, food-service, driving/CDL, warehouse-associate, trades, or engineering
+  roles that merely contain words like "operations" or "program manager": <= 20.
+- Full-time is her priority; internships are a fallback. A title filed as an internship that is
+  really a senior full-time role: say so in red_flags.
+- Only if the posting STATES a start date before her June 2027 graduation, add red flag "start date
+  before June 2027" (don't lower the score for this alone). Don't infer it from an open posting.
+
+Score anchors: 90+ apply today · 75-89 strong fit · 60-74 plausible stretch · <60 not worth her time.
 
 ## Jobs to Score
 

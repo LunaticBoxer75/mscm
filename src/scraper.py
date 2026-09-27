@@ -114,7 +114,16 @@ def _fetch(task, sites, results, hours_old, country):
         return task, None, e
 
 
-_INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?|new grad)\b")
+# An internship only if the TITLE says so. The job boards' internship filter is
+# loose: 70% of rows it returned (12,729 of 18,297 by 2026-09) were ordinary jobs —
+# "Program Manager", "Audit and Compliance Senior" — which then got filed, capped,
+# and hidden as internships. New-grad roles are full-time (OPT) jobs for her.
+_INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?)\b|\b(summer|fall|winter|spring)\s+20\d\d\b")
+
+
+def classify_job_type(title):
+    """'internship' or 'fulltime', from the title alone — never the search filter."""
+    return "internship" if _INTERN_RE.search(str(title or "").lower()) else "fulltime"
 
 
 def _row_to_job(row, jtype, search_term, category, region_tag):
@@ -124,15 +133,17 @@ def _row_to_job(row, jtype, search_term, category, region_tag):
     if not title_str or not company_str:
         return None
 
-    # Title overrides job_type for intern/co-op/new-grad roles. Word boundaries:
-    # plain substrings matched "Internal" (1,323 mis-tags) and "Cooper"/"Cooperative".
-    effective_type = "internship" if _INTERN_RE.search(title_str.lower()) else jtype
+    # Word boundaries: plain substrings matched "Internal" (1,323 mis-tags) and
+    # "Cooper"/"Cooperative".
+    effective_type = classify_job_type(title_str)
 
+    from .locations import region_of  # lazy: locations -> quick_scorer -> scraper
+    location_str = str(row.get("location", "")) if pd.notna(row.get("location")) else ""
     return {
         "job_id": generate_job_id(row),
         "title": title_str,
         "company": company_str,
-        "location": str(row.get("location", "")) if pd.notna(row.get("location")) else "",
+        "location": location_str,
         "job_url": str(row.get("job_url", "")) if pd.notna(row.get("job_url")) else "",
         "description": str(row.get("description", ""))[:10000] if pd.notna(row.get("description")) else "",
         "job_type": effective_type,
@@ -147,17 +158,20 @@ def _row_to_job(row, jtype, search_term, category, region_tag):
         "search_category": category,
         "scraped_at": datetime.now().isoformat(),
         "is_remote": 1 if row.get("is_remote") else 0,
-        "region": region_tag,
+        # Where the job IS, not which search found it — a Seattle search also
+        # returns Olympia, Spokane and out-of-state postings (241 misfiled at 70+).
+        "region": region_of(location_str, row.get("is_remote"), title_str),
     }
 
 
-def _progress(done, total, started, region, jtype, term, location, new):
+def _progress(done, total, started, region, jtype, term, location, new, skipped=0):
     """One line per query, so a hung run is distinguishable from a slow one."""
     elapsed = (datetime.now() - started).total_seconds()
     eta = elapsed / done * (total - done) if done else 0
     blocks = f" | {_blocks} LinkedIn blocks" if _blocks else ""
     print(f"[{done}/{total}] {region}/{jtype} '{term}' @ {location}: +{new} new "
-          f"| {elapsed/60:.0f}m elapsed, ~{eta/60:.0f}m left{blocks}", flush=True)
+          f"({skipped:,} below 70 skipped so far) | {elapsed/60:.0f}m elapsed, ~{eta/60:.0f}m left{blocks}",
+          flush=True)
 
 
 def generate_job_id(row):
@@ -211,6 +225,14 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
     fetch_args = dict(sites=sites, results=prefs["results_per_search"], hours_old=hours_old,
                       country=prefs["country"])
 
+    # Score before storing and keep only postings that could reach her: the user's
+    # rule (2026-09-27) is "skip <70 always". ~80% of what the boards return is
+    # retail/restaurant/driving noise from loose keyword matching. Imported here
+    # because quick_scorer imports this module.
+    from .quick_scorer import score_row
+    min_store = float(prefs.get("min_store_score", 70))
+    skipped = 0
+
     conn = get_db()
     all_new_jobs = []
     done, total, started = 0, len(tasks), datetime.now()
@@ -232,15 +254,26 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                     job_data = _row_to_job(row, jtype, search_term, category, region_tag)
                     if job_data is None:
                         continue
+                    score, breakdown = score_row(
+                        job_data["title"], job_data["company"], job_data["location"],
+                        job_data["description"], job_data["job_type"], job_data["date_posted"],
+                        job_data["scraped_at"], job_data["is_remote"], job_data["salary_min"])
+                    if score < min_store:
+                        skipped += 1
+                        continue
+                    job_data.update(score=score, score_breakdown=breakdown,
+                                    scored_at=job_data["scraped_at"])
                     cur = conn.execute("""
                         INSERT OR IGNORE INTO jobs
                         (job_id, title, company, location, job_url, description, job_type,
                          date_posted, salary_min, salary_max, salary_currency, source,
-                         search_term, search_category, scraped_at, is_remote, region)
+                         search_term, search_category, scraped_at, is_remote, region,
+                         score, score_breakdown, scored_at)
                         VALUES (:job_id, :title, :company, :location, :job_url, :description,
                                 :job_type, :date_posted, :salary_min, :salary_max,
                                 :salary_currency, :source, :search_term, :search_category,
-                                :scraped_at, :is_remote, :region)
+                                :scraped_at, :is_remote, :region,
+                                :score, :score_breakdown, :scored_at)
                     """, job_data)
                     # rowcount is 0 when OR IGNORE skipped a posting we already have
                     if cur.rowcount == 1:
@@ -249,7 +282,7 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
                 # open for hours and lost the whole run if the scrape hung late.
                 conn.commit()
             _progress(done, total, started, region_tag, jtype, search_term, location,
-                      len(all_new_jobs) - before)
+                      len(all_new_jobs) - before, skipped)
 
     conn.commit()
     conn.close()

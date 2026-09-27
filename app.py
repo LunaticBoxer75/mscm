@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src import jobs_data, user_store
+from src import company_size, jobs_data, locations, user_store
 
 PROJECTS_DIR = Path(__file__).parent / "projects"
 DB_PATH = Path(__file__).parent / "data" / "jobs_deploy.db"
@@ -53,6 +53,15 @@ def _load_jobs_raw(min_score):
     # Posting date when real, else first-seen date
     posted = df["date_posted"].where(df["date_posted"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}"), None)
     df["eff_posted"] = posted.fillna(df["scraped_at"].astype(str).str[:10])
+    # Big-metro name for Rest-of-USA jobs (Seattle-area jobs have their own tab)
+    metros = {l: locations.metro_of(l) for l in df["location"].fillna("").unique()}
+    df["metro"] = df["location"].fillna("").map(metros)
+    df.loc[df["is_remote"].fillna(0).astype(bool) & df["metro"].isna(), "metro"] = "Remote"
+    # Company size tier (curated table of the ~500 most frequent employers)
+    sizes = {c: company_size.lookup(c) for c in df["company"].unique()}
+    df["company_tier"] = df["company"].map(lambda c: sizes[c]["tier"])
+    df["company_employees"] = df["company"].map(lambda c: sizes[c]["employees"])
+    df["company_staffing"] = df["company"].map(lambda c: sizes[c]["staffing"])
     # Thousands of jobs share a score; within a tie, Claude-read first, then newest.
     # (Without this, ties came back in arbitrary order — effectively alphabetical.)
     return df.sort_values(["score", "ai_read", "eff_posted"], ascending=False,
@@ -281,6 +290,23 @@ def _safe_url(u):
     return u if u.startswith(("http://", "https://")) else ""
 
 
+def _metro_badge(row):
+    m = row.get("metro")
+    if row.get("region") != "seattle" and isinstance(m, str) and m:
+        return f" <span style='color:#6b7280;font-size:0.8em'>📍 {html.escape(m)}</span>"
+    return ""
+
+
+def _size_badge(row):
+    """Small grey tag: company size tier, or 'via agency' for staffing firms."""
+    if row.get("company_staffing"):
+        return " <span style='color:#9ca3af;font-size:0.8em' title='Staffing agency — the real employer is someone else'>(via agency)</span>"
+    tier = row.get("company_tier")
+    if tier and tier != "unknown":
+        return f" <span style='color:#9ca3af;font-size:0.8em' title='Approx. employees'>🏢 {tier}</span>"
+    return ""
+
+
 def job_row(row, key, apps, selectable=True):
     """One job line with inline actions. Shared by the Today and Jobs pages.
 
@@ -303,7 +329,8 @@ def job_row(row, key, apps, selectable=True):
         st.markdown(
             f"<span style='font-size:0.9em' title='{'Claude read this posting' if ai else 'Keyword score only'}'>"
             f"{ai}<b>{html.escape(str(row.get('title', '')))}</b> @ {html.escape(str(row.get('company', '')))}"
-            f" · {html.escape(str(row.get('location', '')))}</span>", unsafe_allow_html=True)
+            f"{_size_badge(row)} · {html.escape(str(row.get('location', '')))}{_metro_badge(row)}</span>",
+            unsafe_allow_html=True)
     with c_sal:
         lo, hi = row.get("salary_min"), row.get("salary_max")
         if pd.notna(lo):
@@ -401,6 +428,8 @@ def filter_jobs(df):
         filtered = filtered[filtered["company"].isin(company_filter)]
     if title_filter:
         filtered = filtered[filtered["title"].isin(title_filter)]
+    if metro_filter:  # applies to Rest-of-USA jobs; Seattle-area jobs are unaffected
+        filtered = filtered[(filtered["region"] == "seattle") | filtered["metro"].isin(metro_filter)]
     return filtered
 
 
@@ -408,7 +437,7 @@ def filter_jobs(df):
 # === TAB: JOBS ===
 def page_jobs():
     # Sidebar filters live only on this page; filter_jobs() reads them as globals.
-    global search_query, min_score, region_filter, type_filter, date_filter, company_filter, title_filter, all_jobs, scored
+    global search_query, min_score, region_filter, type_filter, date_filter, company_filter, title_filter, metro_filter, all_jobs, scored
     # --- SIDEBAR ---
     st.sidebar.header("Filters")
     search_query = st.sidebar.text_input("🔍 Search (title, company, location)", placeholder="e.g. supply chain manager")
@@ -424,13 +453,23 @@ def page_jobs():
         _conn = get_db()
         top_companies = _conn.execute("""
             SELECT company, COUNT(*) as cnt FROM jobs
-            WHERE score >= 60 AND (dismissed IS NULL OR dismissed = 0)
+            WHERE score >= 60
             AND company IS NOT NULL AND company != ''
-            GROUP BY company ORDER BY cnt DESC LIMIT 50
+            GROUP BY company ORDER BY cnt DESC LIMIT 400
         """).fetchall()
         _conn.close()
+        # Biggest employers first (by headcount), then by number of openings
+        top_companies = sorted(top_companies, key=lambda r: (
+            -(company_size.lookup(r[0])["employees"] or 0), -r[1]))
         company_options += [r[0] for r in top_companies]
-    company_filter = st.sidebar.multiselect("Company", company_options[1:], default=[], placeholder="Type to search companies...")
+
+    def _company_label(c):
+        tier = company_size.lookup(c)["tier"]
+        return f"{c} · {tier}" if tier != "unknown" else c
+
+    company_filter = st.sidebar.multiselect("Company (largest first)", company_options[1:], default=[],
+                                            format_func=_company_label,
+                                            placeholder="Type to search companies...")
     if not company_filter:
         company_filter = None
 
@@ -450,6 +489,13 @@ def page_jobs():
     if not title_filter:
         title_filter = None
 
+    # Big cities for the Rest-of-USA panels, most openings first
+    _metro_counts = load_jobs(min_score=60)["metro"].value_counts()
+    metro_filter = st.sidebar.multiselect(
+        "City (Rest of USA)", list(_metro_counts.index),
+        format_func=lambda m: f"{m} ({_metro_counts[m]:,})",
+        placeholder="All cities") or None
+
     # --- LOAD DATA ---
     all_jobs = load_jobs(min_score=min_score)
     scored = all_jobs if not all_jobs.empty else pd.DataFrame()
@@ -468,9 +514,15 @@ def page_jobs():
         st.info("No scored jobs yet. Run `/find-jobs` in Claude Code.")
     else:
         jobs = filter_jobs(scored)
+        sort_by = st.radio("Sort", ["Best match", "Largest companies first"], horizontal=True,
+                           key="job_sort", label_visibility="collapsed")
+        if sort_by == "Largest companies first":
+            # Headcount first (unknown sizes last), then match score
+            jobs = jobs.assign(_emp=jobs["company_employees"].fillna(-1)).sort_values(
+                ["_emp", "score"], ascending=False, kind="stable").drop(columns="_emp")
         # Full-time first: internships are a fallback only (UW CPT one-year rule, 2026-09-23).
-        sub_tabs = st.tabs(["Seattle FT", "National FT", "Seattle Intern (fallback)",
-                            "National Intern (fallback)", "All"])
+        sub_tabs = st.tabs(["Seattle area FT", "Big cities & rest of USA FT", "Seattle Intern (fallback)",
+                            "USA Intern (fallback)", "All"])
 
         def render_table(df, name, key):
             if df.empty:
@@ -1515,7 +1567,7 @@ def page_today():
             st.caption("Nothing posted in the last 14 days — showing the best older postings.")
         st.caption("🤖 = Claude read the posting." if pool["ai_read"].any() else
                    "Ranked by keyword score (Claude hasn't read these yet); ties go to the newest posting.")
-        for label, region, n in (("Seattle & area", "seattle", 8), ("Rest of USA", "national", 4)):
+        for label, region, n in (("Seattle & area", "seattle", 8), ("Big cities & rest of USA", "national", 4)):
             rows = pool[pool["region"] == region].head(n)
             st.markdown(f"**{label}**")
             if rows.empty:

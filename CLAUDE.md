@@ -36,7 +36,13 @@ python -m src.pipeline report    # Just generate report
   one-year rule likely rules out an internship inside her first academic year. Report full-time
   first; do not re-elevate internships without being told.
 - **Risk / Compliance / Operations roles rank highest** — they match her actual Uber background.
-- **Seattle & area before national.**
+- **Seattle area first** (its own tab), **then big US metros** (Bay Area, New York area, Austin,
+  Dallas-Fort Worth, LA, Chicago, Atlanta, Boston, Denver, …), **then everything else**. Defined once in
+  `src/locations.py`; region comes from the job's location, not which search found it.
+- **Nothing scoring under 70 is kept** (user's rule, 2026-09-27): the scraper skips it and the export
+  deletes it — except jobs she applied to/dismissed, and rows Claude already read (deleting those
+  makes the next scrape re-insert them for Claude to re-read daily).
+- **She has 4 years of experience** + an MSCM (June 2027). "5 years required" is not a blocker.
 
 ## Architecture
 
@@ -55,6 +61,8 @@ src/interview_prep.py       ← Mentor recs, STAR stories, mock bank + session h
 src/tracker.py              ← Application status tracking with follow-ups
 src/todos.py, networking.py ← To-dos; coffee-chat log
 src/sponsor_data.py         ← H1B / E-Verify sponsor lookup (USCIS-verified counts)
+src/locations.py            ← Seattle-area vs rest of USA; big-metro map (city + state, exact)
+src/company_size.py         ← Size tiers from config/company_sizes.json (top ~500 employers)
 src/projects.py             ← Auto-generate portfolio projects from skill gaps
 src/referrals.py            ← LinkedIn referral link generator (search links only, never scraped)
 src/pipeline.py             ← Orchestrator (full pipeline or individual steps)
@@ -110,21 +118,38 @@ her last-good data read-only with a banner and refuses writes rather than droppi
 
 ## Scoring Architecture (Two-Pass)
 
-1. **Pass 1 — Quick Scorer** (`src/quick_scorer.py`): Rule-based triage applied to ALL jobs immediately after scraping. Uses title keywords, seniority detection, years-of-experience extraction from description, and location matching. Kills obvious irrelevant jobs (retail, medical, etc.) at score <30. Fast — handles 1000+ jobs in seconds.
+1. **Pass 1 — Quick Scorer** (`src/quick_scorer.py`, rewritten 2026-09-26): rules over ALL ~86K jobs
+   in ~30s. Score = role fit (risk/compliance/fraud 50 > ops analytics 49 > supply chain 47 >
+   planning/program mgmt 44 > adjacent 38) + role-scaled seniority, location (Seattle core 15 > Seattle
+   area 13 > remote 11 > big metro 10 > rest of WA 8 > elsewhere 5), employer H-1B volume (USCIS counts, log scale), freshness, description signals, then hard
+   caps. Every keyword rule uses word boundaries. Continuous (one decimal) so it can actually rank:
+   269 distinct scores in 70–100 (was 5), largest bucket 2.8% of the 70+ set (was 42%).
+   - **F-1 caps:** clearance / U.S.-person (ITAR) / citizen-only → 30; federal agencies → 35; defense
+     employers with no description → 40. "Won't support STEM OPT / no E-Verify" −15.
+   - **Other caps:** clinical, food, retail, driving, warehouse, trades 18–35; engineering and
+     director+ 45; senior/manager titles filed as internships 35.
+   - **Years required** read from the requirements section, largest stated minimum.
+   - Measure changes with `scripts/eval_quick_scorer.py` (read-only; 550 hand-labelled rows).
+     Precision of the ≥90 band on that sample: 21% → 69% relevant (34% → 1% irrelevant).
+   - After changing rules: `python scripts/rescore_all.py --apply` (one transaction; never touches
+     Pass-2 rows) so old and new rows share one scale.
 
 2. **Pass 2 — AI Scorer** (Claude inline, no API key): Claude Code itself reads descriptions and
    rescores with nuance (e.g. "2+ required, 5+ preferred" vs "must have 9+ years"), stamping
    `score_breakdown.scorer = "ai"`. `/find-jobs` runs it per-panel on the latest scrape day with
    caps skewed toward full-time (30 Seattle FT / 30 national FT / 5 + 5 internship).
 
-**Known limits of this architecture — do not paper over them:**
-- **Pass 1 alone cannot rank.** Only 5 distinct scores exist above 70 (95, 77, 75, 74, 71), with
-  ~1,825 jobs tied at exactly 95. Within a bucket the order is arbitrary. Pass 2 is what creates
-  real ordering; a row without `scorer="ai"` has never been read by anyone.
-- **Pass 1 false positives are gross.** "Podiatrist (Program Manager)" at the VA scores 95. Senior
-  TPM roles land in the internship panel.
-- **65% of the corpus cannot be AI-scored at all.** All 58,474 LinkedIn rows have an empty
-  `description`; only Indeed's ~31K are readable. Mark unread rows `(quick score only)` in reports.
+**Internship vs full-time comes from the TITLE** (`scraper.classify_job_type`): intern/internship/co-op
+or "<season> 20xx". The boards' internship filter is loose — 70% of what it returned were ordinary
+jobs — and new-grad roles are full-time (OPT) for her.
+
+**Known limits — do not paper over them:**
+- **65% of the corpus has no description** (all LinkedIn rows) — Pass 2 can't read them and Pass 1's
+  description rules (years, clearance, sponsorship) can't fire. Mark unread rows `(quick score only)`.
+  `linkedin_fetch_description=True` would fix it at one extra LinkedIn request per posting.
+- Defense-employer caps are by name when there's no description — coarse.
+- Company size isn't stored: JobSpy returns `company_num_employees` for Indeed only, as a text label
+  ("10,000+"); LinkedIn doesn't return it.
 
 ## Dashboard
 
@@ -150,6 +175,11 @@ Seattle 8 / national 4), follow-ups due, high-priority to-dos, mock/STAR nudges.
 Claude-read first, then newest — never alphabetical. "Open ↗" never tracks; ✓ marks applied and queues
 a 7-day follow-up; ✕ dismisses everywhere. Scraped text is HTML-escaped and only http(s) links render
 (rows use `unsafe_allow_html`). Every save shows a "Saved — …" toast via `user_store.on_write`.
+Rows also show 🏢 company size tier (or "(via agency)" for staffing firms) and 📍 metro for Rest-of-USA
+jobs. The Jobs page has a "Largest companies first" sort, a City filter, and a Company filter ordered by
+headcount. Sizes: `config/company_sizes.json` — 480 of the top-500 employers (87% of their jobs sized;
+329 Wikipedia-verified), subsidiaries rolled up to parents, staffing firms flagged not sized. Exact-name
+match is tried before suffix-stripped (else "Compass Group USA" → Compass the real-estate firm).
 
 **Jobs** — 4 panels (Seattle FT, National FT, then the two internship panels labelled fallback). Row-per-job with
 25-per-page pagination — `st.dataframe(on_select=...)` was unreliable and 500 buttons was slow.
@@ -195,7 +225,7 @@ STAR drafts; story-theme coverage gaps are surfaced.
 |-----------|--------|------------------|
 | Role Relevance | 25% | Alignment with SCM/ops/PM target roles |
 | Skills Match | 20% | Overlap with candidate's skills |
-| Experience Fit | 15% | Appropriate level (3yr exp, entry-to-mid) |
+| Experience Fit | 15% | Appropriate level (4 yrs exp + MSCM, entry-to-mid) |
 | Location Match | 15% | Seattle/WA area or remote |
 | Company Tier | 10% | Known SCM companies (Amazon, Boeing, etc.) |
 | Growth Potential | 10% | Career trajectory opportunity |
@@ -211,7 +241,9 @@ STAR drafts; story-theme coverage gaps are surfaced.
 
 **Seattle & Area (priority):** Seattle, Tacoma, Everett (Bellevue/Kirkland/Redmond dropped 2026-09-26 —
 Seattle's ~50mi search radius covers them; they added 9 of 169 new postings)
-**National:** SF, SJ, LA, NYC, Chicago, Austin, Dallas, Atlanta, Boston, Denver, Remote
+**National (searched):** SF, SJ, LA, NYC, Chicago, Austin, Dallas, Atlanta, Boston, Denver, Remote.
+Other big metros (Houston, DC, Philadelphia, Charlotte, Minneapolis, …) still rank as big cities when
+found, but aren't searched directly.
 
 ## Key Dependencies
 
