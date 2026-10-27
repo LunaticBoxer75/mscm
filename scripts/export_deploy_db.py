@@ -3,10 +3,7 @@
 Run after scraping/scoring to refresh data/jobs_deploy.db for the dashboard.
 Keeps jobs scoring 70+, full-time and internship alike.
 
-Internships used to get a lower bar (55) when they were a priority. As of
-2026-09-23 they are a fallback only — full-time is the priority, since the UW CPT
-one-year rule likely rules out an internship inside her first academic year. Same
-bar for both now; a 70 floor still leaves ~2.3K internships (280 in Seattle).
+Internships and full-time jobs share the same 70 bar.
 
 The candidate's own data (applications, coffee chats, todos, recommendations, STAR
 stories, mock sessions) deliberately does NOT live here — it lives in

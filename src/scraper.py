@@ -122,7 +122,7 @@ def _fetch(task, sites, results, hours_old, country):
 # An internship only if the TITLE says so. The job boards' internship filter is
 # loose: 70% of rows it returned (12,729 of 18,297 by 2026-09) were ordinary jobs —
 # "Program Manager", "Audit and Compliance Senior" — which then got filed, capped,
-# and hidden as internships. New-grad roles are full-time (OPT) jobs for her.
+# and hidden as internships. New-grad roles count as full-time.
 _INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?)\b|\b(summer|fall|winter|spring)\s+20\d\d\b")
 
 

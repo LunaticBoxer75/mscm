@@ -504,8 +504,8 @@ def _extract_years_required(description):
     Reads only the required section (text before "Preferred qualifications"). Every basic
     qualification must be met, so plain requirements take the LARGEST stated minimum. A
     requirement tied to a degree on the same line ("Bachelor's + 6 years OR Master's + 4
-    years", "Bachelor's degree and two years") is an alternative path — she has a Bachelor's
-    and will hold the MSCM — so the result is min(largest plain, smallest degree path).
+    years", "Bachelor's degree and two years") is an alternative path — the candidate is
+    assumed to hold the degree — so the result is min(largest plain, smallest degree path).
     Degree substitutions ("in lieu of a degree, 9 years", "or equivalent (minimum 12
     years)") are ignored.
     """

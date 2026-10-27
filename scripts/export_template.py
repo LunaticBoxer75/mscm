@@ -26,7 +26,7 @@ EXCLUDE_FILES = {"CLAUDE.md", "config/profile.json", ".claude/scheduled_tasks.js
 IDENTIFYING = re.compile(
     r"bhumika|choudhary|bhummika|bhumichoudhary|9666597222|hyderabad|st\.? francis college|foster school"
     r"|uw foster|university of washington|\buber\b|lunaticboxer75|aniketsw|mscm-bhumika|microbiology"
-    r"|global sme", re.I)
+    r"|global sme|\buw\b|schoolfilter=%5b%222584", re.I)
 # Reference data that lists employers by name (Uber, University of Washington) — not about her.
 # The eval sample's job rows name real employers too.
 CHECK_SKIP = {"config/company_sizes.json", "config/h1b_sponsors_verified.json", "src/sponsor_data.py",

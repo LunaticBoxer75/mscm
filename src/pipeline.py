@@ -17,7 +17,7 @@ console = Console()
 def run_full_pipeline(hours_old=24, score_limit=50, skip_scrape=False, skip_score=False):
     """Run the complete daily pipeline: scrape -> score -> report."""
     console.print(f"\n[bold blue]{'='*60}[/bold blue]")
-    console.print(f"[bold blue]  MSCM Job Search Pipeline - {datetime.now().strftime('%Y-%m-%d %H:%M')}[/bold blue]")
+    console.print(f"[bold blue]  Job Search Pipeline - {datetime.now().strftime('%Y-%m-%d %H:%M')}[/bold blue]")
     console.print(f"[bold blue]{'='*60}[/bold blue]\n")
 
     # Step 1: Scrape

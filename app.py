@@ -592,7 +592,7 @@ def page_jobs():
             # Headcount first (unknown sizes last), then match score
             jobs = jobs.assign(_emp=jobs["company_employees"].fillna(-1)).sort_values(
                 ["_emp", "score"], ascending=False, kind="stable").drop(columns="_emp")
-        # Full-time first: internships are a fallback only (UW CPT one-year rule, 2026-09-23).
+        # Full-time first: internships are listed as a fallback.
         sub_tabs = st.tabs([f"{HOME} area FT", "Big cities & rest of USA FT", f"{HOME} Intern (fallback)",
                             "USA Intern (fallback)", "All"])
 
@@ -749,7 +749,7 @@ def page_jobs():
                 ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", width="stretch")
-                ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", width="stretch")
+                ref_cols[3].link_button(f"🎓 {_ID['school_short']} Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%22{_ID['linkedin_school_id']}%22%5D", width="stretch")
 
                 # Resume tailor (B1+B2)
                 desc = job.get("description", "") or ""
@@ -875,7 +875,7 @@ def page_referrals():
                 ref_cols[0].link_button("👥 Same Role", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(role_kw)}&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[1].link_button("🎯 Recruiters", f"https://www.linkedin.com/search/results/people/?keywords=recruiter%20talent%20acquisition&company={urllib.parse.quote(company)}", width="stretch")
                 ref_cols[2].link_button("📦 SC Team", f"https://www.linkedin.com/search/results/people/?keywords=supply%20chain%20procurement&company={urllib.parse.quote(company)}", width="stretch")
-                ref_cols[3].link_button("🎓 UW Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D", width="stretch")
+                ref_cols[3].link_button(f"🎓 {_ID['school_short']} Alumni", f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%22{_ID['linkedin_school_id']}%22%5D", width="stretch")
                 from src.outreach import referral_note
                 msg = referral_note(title, company)
                 st.code(msg, language=None)

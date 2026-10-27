@@ -1,8 +1,8 @@
 """Fetch job descriptions for top LinkedIn postings, so Claude (Pass 2) can read them.
 
 LinkedIn search results come back with NO description (JobSpy only fetches it with
-one extra request per posting). That hides most of the Seattle panel from Pass 2:
-on 2026-09-27, of 1,148 Seattle full-time jobs rated 80+, only 42 had a description.
+one extra request per posting). That hides most of the home-area panel from Pass 2:
+most home-area full-time jobs rated 80+ had no description.
 
 Fetches serially with a 0.6-1.2s pause, and stops early if LinkedIn stops returning
 descriptions (a 429 looks like an empty page), so a block is reported, not hidden.

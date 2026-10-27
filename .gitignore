@@ -13,7 +13,7 @@ data/jobs.db.bak
 data/jobs_new.db
 .DS_Store
 
-# Her data lives on the user-data branch; this is only a local snapshot
+# The candidate's data lives on the user-data branch; this is only a local snapshot
 data/user_data.json
 data/user_data.json.tmp
 
