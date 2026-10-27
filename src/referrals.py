@@ -10,12 +10,8 @@ import json
 import urllib.parse
 from pathlib import Path
 
-from .outreach import _years
+from . import profile
 from .scraper import get_db
-
-# UW Foster MSCM alumni search
-FOSTER_ALUMNI_SEARCH = "https://www.linkedin.com/search/results/people/?keywords={keywords}&schoolFilter=%5B%222584%22%5D"
-# 2584 = University of Washington LinkedIn school ID
 
 # General people search at a company
 COMPANY_PEOPLE_SEARCH = "https://www.linkedin.com/search/results/people/?keywords={keywords}&company={company}"
@@ -81,10 +77,12 @@ def generate_referral_links(job):
         "purpose": "Find the hiring manager or team members",
     })
 
-    # 4. UW Foster alumni at that company
-    foster_url = f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}&schoolFilter=%5B%222584%22%5D"
+    # 4. Alumni of her school at that company
+    ident = profile.identity()
+    foster_url = (f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(company)}"
+                  f"&schoolFilter=%5B%22{ident['linkedin_school_id']}%22%5D")
     links.append({
-        "label": f"UW Foster alumni at {company}",
+        "label": f"{ident['school_short']} alumni at {company}",
         "url": foster_url,
         "purpose": "Warm intro via shared school connection",
     })
@@ -161,14 +159,14 @@ def format_referral_report_markdown(report):
         "```",
         "Hi [Name],",
         "",
-        f"I'm an MSCM student at UW Foster (graduating June 2027) with {_years()} years",
-        "of risk & operations experience at Uber. I noticed [Company] has a [Role] opening",
+        f"I'm {profile.intro('long_intro')}.",
+        "I noticed [Company] has a [Role] opening",
         "and I'd love to learn more about the team and culture.",
         "",
         "Would you be open to a 15-minute chat? Happy to work around your schedule.",
         "",
         "Best,",
-        "Bhumika Choudhary",
+        profile.load()["candidate"]["name"],
         "```",
     ])
 

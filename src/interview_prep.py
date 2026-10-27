@@ -7,7 +7,7 @@ JSON, not SQLite. The question bank and themes below are static content.
 import random
 from datetime import datetime
 
-from . import user_store
+from . import profile, user_store
 
 
 # ============ RECOMMENDATIONS ============
@@ -29,20 +29,9 @@ def get_recommendations():
     return sorted(rows, key=lambda r: r.get("category") or "")  # stable: keeps newest-first
 
 
-def seed_shivam_recommendations():
-    """Seed recommendations from the Shivam Suru coffee chat."""
-    recs = [
-        ("Stories should be so clear and transitional the interviewer can easily take notes and discuss with their team — structured, impactful, not complicated", "Story Craft", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Apply STAR method to every story, categorized by behavioral theme (conflict, prioritization, etc.)", "Story Craft", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Interviews dive progressively deeper — be ready for follow-up layers on every story", "Interview Dynamics", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Interview math: ~150 applications → ~5 interviews → aim to convert 4 of 5. Getting the interview is half the battle; converting is the skill", "Strategy", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Start interview prep VERY early — don't wait", "Timing", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Understand your portfolio projects deeply: how built, how AI was used, real impact — depth matters as much as having the project", "Portfolio", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Tailor resume + portfolio to each company's cultural values (e.g., Amazon Leadership Principles)", "Company Fit", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Leverage unique background (Microbiology + Uber policy/risk + SCM + AI) — companies like Google value it", "Positioning", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Broaden target roles: Product, Program, Vendor, and general Management — not just SCM", "Role Targeting", "Shivam Suru", "AI Product Manager, Amazon"),
-        ("Do a mock interview every 2 weeks to keep stories sharp and learn current top questions", "Practice", "Shivam Suru", "AI Product Manager, Amazon"),
-    ]
+def seed_recommendations():
+    """Seed mentor recommendations listed in config/profile.json (seed.interview_recs)."""
+    recs = profile.load().get("seed", {}).get("interview_recs", [])
     existing = {r.get("recommendation") for r in user_store.get("interview_recs")}
     new = [_rec(*r) for r in recs if r[0] not in existing]
     if new:  # runs on every render: zero commits once seeded

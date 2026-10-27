@@ -14,6 +14,8 @@ import json
 import urllib.parse
 from pathlib import Path
 
+from .profile import identity, load as load_profile
+
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
@@ -22,28 +24,23 @@ def get_profile_data():
     with open(CONFIG_DIR / "profile.json") as f:
         profile = json.load(f)
     candidate = profile.get("candidate", {})
-    full = candidate.get("name", "Bhumika Choudhary")
+    full = candidate["name"]
     return {
         "firstName": full.split()[0],
         "lastName": full.split()[-1],
         "fullName": full,
         "email": candidate.get("email", ""),
         "phone": candidate.get("phone", ""),
-        "linkedin": f"https://www.linkedin.com/in/{candidate.get('linkedin', 'bhummika')}/",
-        "city": "Seattle",
-        "school": "University of Washington - Foster School of Business",
-        "degree": "Master of Supply Chain Management (MSCM)",
+        "linkedin": f"https://www.linkedin.com/in/{candidate.get('linkedin', '')}/",
+        "city": identity()["home_city"],
+        "school": candidate.get("university", ""),
+        "degree": identity().get("degree", ""),
     }
 
 
 # Answers she should give by hand (shown on the Tools page, never auto-filled).
-MANUAL_ANSWERS = {
-    "Will you now or in the future require sponsorship?": "Yes — F-1 student; will need H-1B sponsorship after OPT.",
-    "Work authorization": "F-1 student. OPT from ~June 2027 (12 months), then the 24-month STEM extension "
-                          "with an E-Verify employer.",
-    "Earliest start date": "June 2027 (after MSCM graduation, once the OPT EAD arrives).",
-    "Graduation": "MSCM, June 2027.",
-}
+# Answers she should give by hand (shown on the Tools page, never auto-filled).
+MANUAL_ANSWERS = load_profile().get("manual_answers", {})
 
 _JS = r"""
 (function(){
@@ -81,7 +78,7 @@ _JS = r"""
     var v = pick(el);
     if (v) { setVal(el, v); filled++; }
   });
-  alert('MSCM Auto-Fill: filled ' + filled + ' fields.\n\nNOT filled on purpose: sponsorship, work authorization, EEO, salary, start date. Answer those yourself. Review everything before submitting.');
+  alert('Auto-Fill: filled ' + filled + ' fields.\n\nNOT filled on purpose: sponsorship, work authorization, EEO, salary, start date. Answer those yourself. Review everything before submitting.');
 })();
 """
 
@@ -98,4 +95,4 @@ def generate_bookmarklet_js():
 def get_bookmarklet_html():
     """Return HTML snippet with the draggable bookmarklet link."""
     encoded, _ = generate_bookmarklet_js()
-    return f'<a href="{encoded}" class="bookmarklet">📌 MSCM Auto-Fill</a>'
+    return f'<a href="{encoded}" class="bookmarklet">📌 Auto-Fill</a>'

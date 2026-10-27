@@ -1,4 +1,4 @@
-"""MSCM Job Search Dashboard — Streamlit web UI.
+"""Job Search Dashboard — Streamlit web UI.
 
 Two data sources, deliberately disjoint:
   data/jobs_deploy.db  — scraped jobs. Read-only here; refreshed by /find-jobs.
@@ -20,12 +20,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src import company_size, jobs_data, locations, user_store
+from src import company_size, jobs_data, locations, profile, user_store
 
 PROJECTS_DIR = Path(__file__).parent / "projects"
 DB_PATH = Path(__file__).parent / "data" / "jobs_deploy.db"
 
-st.set_page_config(page_title="MSCM Job Search", page_icon="🎯", layout="wide")
+_ID = profile.identity()
+NAME, HOME = profile.first_name(), _ID["home_city"]
+st.set_page_config(page_title=_ID["app_title"], page_icon="🎯", layout="wide")
 
 
 def get_db():
@@ -48,14 +50,13 @@ def _load_jobs_raw(min_score):
         ORDER BY score DESC
     """, conn, params=(min_score,))
     conn.close()
-    if df.empty:
-        return df
+    # No early return when empty: pages index the derived columns below.
     # Claude read this job (Pass 2) vs keyword score only (Pass 1)
     df["ai_read"] = df["score_breakdown"].fillna("").str.contains(r'"scorer"\s*:\s*"ai"', regex=True)
     # Posting date when real, else first-seen date
     posted = df["date_posted"].where(df["date_posted"].astype(str).str.match(r"^\d{4}-\d{2}-\d{2}"), None)
     df["eff_posted"] = posted.fillna(df["scraped_at"].astype(str).str[:10])
-    # Big-metro name for Rest-of-USA jobs (Seattle-area jobs have their own tab)
+    # Big-metro name for Rest-of-USA jobs (home-area jobs have their own tab)
     metros = {l: locations.metro_of(l) for l in df["location"].fillna("").unique()}
     df["metro"] = df["location"].fillna("").map(metros)
     df.loc[df["is_remote"].fillna(0).astype(bool) & df["metro"].isna(), "metro"] = "Remote"
@@ -451,8 +452,8 @@ if _updated:
     _age = (date.today() - date.fromisoformat(_updated)).days
     _fresh = (f"<span class='fresh stale'>⚠️ Jobs updated {_updated} · {_age} days ago</span>" if _age > 3
               else f"<span class='fresh'>Jobs updated {_updated}</span>")
-st.markdown(f"<div class='brand'><span>🎯 <b>MSCM Job Search</b> · Bhumika Choudhary · UW Foster "
-            f"MSCM '27</span>{_fresh}</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='brand'><span>🎯 <b>{html.escape(_ID['app_title'])}</b> · "
+            f"{html.escape(_ID['brand_subtitle'])}</span>{_fresh}</div>", unsafe_allow_html=True)
 
 if user_store.is_degraded():
     st.warning("⚠️ Can't reach GitHub right now — showing your last saved data. "
@@ -497,7 +498,7 @@ def filter_jobs(df):
         filtered = filtered[filtered["company"].isin(company_filter)]
     if title_filter:
         filtered = filtered[filtered["title"].isin(title_filter)]
-    if metro_filter:  # applies to Rest-of-USA jobs; Seattle-area jobs are unaffected
+    if metro_filter:  # applies to Rest-of-USA jobs; home-area jobs are unaffected
         filtered = filtered[(filtered["region"] == "seattle") | filtered["metro"].isin(metro_filter)]
     return filtered
 
@@ -592,7 +593,7 @@ def page_jobs():
             jobs = jobs.assign(_emp=jobs["company_employees"].fillna(-1)).sort_values(
                 ["_emp", "score"], ascending=False, kind="stable").drop(columns="_emp")
         # Full-time first: internships are a fallback only (UW CPT one-year rule, 2026-09-23).
-        sub_tabs = st.tabs(["Seattle area FT", "Big cities & rest of USA FT", "Seattle Intern (fallback)",
+        sub_tabs = st.tabs([f"{HOME} area FT", "Big cities & rest of USA FT", f"{HOME} Intern (fallback)",
                             "USA Intern (fallback)", "All"])
 
         def render_table(df, name, key):
@@ -631,13 +632,13 @@ def page_jobs():
 
         with sub_tabs[0]:
             sea_ft = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] != "internship")]
-            render_table(sea_ft, "Seattle full-time", "t_sea_ft")
+            render_table(sea_ft, f"{HOME} full-time", "t_sea_ft")
         with sub_tabs[1]:
             nat_ft = jobs[(jobs["region"] == "national") & (jobs["job_type"] != "internship")]
             render_table(nat_ft, "National full-time", "t_nat_ft")
         with sub_tabs[2]:
             sea_int = jobs[(jobs["region"] == "seattle") & (jobs["job_type"] == "internship")]
-            render_table(sea_int, "Seattle internship", "t_sea_int")
+            render_table(sea_int, f"{HOME} internship", "t_sea_int")
         with sub_tabs[3]:
             nat_int = jobs[(jobs["region"] == "national") & (jobs["job_type"] == "internship")]
             render_table(nat_int, "National internship", "t_nat_int")
@@ -930,7 +931,7 @@ def page_sponsors():
 
     st.divider()
     st.info("""
-    **Why this matters for STEM OPT:** Bhumika's MSCM is STEM-designated, giving her 36 months of OPT.
+    **Why this matters for STEM OPT:** a STEM-designated degree gives 36 months of OPT.
     But the 24-month extension REQUIRES the employer to be E-Verify enrolled. The SCM list above is
     curated for role relevance; the verified list shows actual USCIS approval volume.
 
@@ -986,7 +987,7 @@ def page_insights():
         st.info("No scored jobs to analyze yet.")
     else:
         _skills_caption(insights, exact)
-        st.caption("✅ = Bhumika already has it, ❌ = gap to build.")
+        st.caption(f"✅ = {NAME} already has it, ❌ = gap to build.")
 
         def render_skill_table(items, title):
             st.markdown(f"#### {title}")
@@ -1021,7 +1022,7 @@ def page_insights():
 # === TAB: FELLOWSHIPS ===
 def page_fellowships():
     st.subheader("🏆 Fellowships, Competitions & Programs")
-    st.caption("Curated SCM/Operations opportunities for an F1 MSCM student. Verify live dates each fall — most LDPs recruit Aug-Nov for next year.")
+    st.caption("Curated opportunities from config/opportunities.json. Verify live dates each fall — most LDPs recruit Aug-Nov for next year.")
 
     import json as _json
     opp_path = Path(__file__).parent / "config" / "opportunities.json"
@@ -1169,12 +1170,12 @@ def page_interview():
 
     from src import prep_content as pc
     from src.interview_prep import (
-        get_recommendations, seed_shivam_recommendations,
+        get_recommendations, seed_recommendations,
         get_stories, add_story, delete_story, STORY_THEMES, story_coverage,
         generate_mock_interview, get_interview_experience_sources,
         save_mock_session, get_mock_sessions, delete_mock_session, practice_cadence,
     )
-    seed_shivam_recommendations()
+    seed_recommendations()
 
     # --- Context bar: domain focus + which company she's prepping for ---
     apps_df = load_applications()
@@ -1316,8 +1317,8 @@ def page_interview():
                         st.markdown("**Follow-ups to expect**")
                         for fu in c["followups"]:
                             st.markdown(f"- {fu}")
-                    if c.get("bhumika_angle"):
-                        st.success(f"**Your angle:** {c['bhumika_angle']}")
+                    if c.get("candidate_angle"):
+                        st.success(f"**Your angle:** {c['candidate_angle']}")
 
     # ============ 4. STAR STORIES ============
     with iv_sub[3]:
@@ -1385,7 +1386,7 @@ def page_interview():
     with iv_sub[4]:
         if cad["overdue"]:
             st.warning("Mock is overdue — the cadence your mentor recommended is one every 2 weeks.")
-        st.caption("UW Foster's EY Center for Career Advancement runs free mock interviews in "
+        st.caption("Your school's career center may run free mock interviews in "
                    "functional, behavioral, and case formats. Use this for solo reps between those.")
 
         if "mock_questions" not in st.session_state:
@@ -1675,7 +1676,7 @@ def page_tools():
     from src.bookmarklet import MANUAL_ANSWERS, generate_bookmarklet_js, get_profile_data
     encoded, raw_js = generate_bookmarklet_js()
 
-    st.markdown(f'<a href="{encoded}" style="display:inline-block; padding:10px 20px; background:#1a73e8; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">📌 MSCM Auto-Fill (drag to bookmarks)</a>', unsafe_allow_html=True)
+    st.markdown(f'<a href="{encoded}" style="display:inline-block; padding:10px 20px; background:#1a73e8; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">📌 Auto-Fill (drag to bookmarks)</a>', unsafe_allow_html=True)
     st.caption("👆 Drag this button to your bookmarks bar — clicking here won't do anything useful")
 
     with st.expander("What will it fill in?"):
@@ -1754,7 +1755,7 @@ def page_today():
             st.caption("Nothing posted in the last 14 days — showing the best older postings.")
         st.caption("🤖 = Claude read the posting." if pool["ai_read"].any() else
                    "Ranked by keyword score (Claude hasn't read these yet); ties go to the newest posting.")
-        for label, region, n in (("Seattle & area", "seattle", 8), ("Big cities & rest of USA", "national", 4)):
+        for label, region, n in ((f"{HOME} & area", "seattle", 8), ("Big cities & rest of USA", "national", 4)):
             rows = pool[pool["region"] == region].head(n)
             st.markdown(f"**{label}**")
             if rows.empty:

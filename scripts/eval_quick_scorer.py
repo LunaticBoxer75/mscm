@@ -20,7 +20,7 @@ Usage:
   python3 scripts/eval_quick_scorer.py --new /tmp/candidate_quick_scorer.py
 
 Labels (LABELS below) were assigned by reading title + company + description:
-  R = relevant for Bhumika (target family, plausible level for ~3 yrs + MSCM, no F-1 blocker)
+  R = relevant for the candidate (target family, plausible level for ~3 yrs + MSCM, no F-1 blocker)
   B = borderline (adjacent role, stretch seniority, sponsorship-unfriendly, unclear from title)
   I = irrelevant (wrong field, far too senior, F-1 ineligible, hourly labor)
 "strat" rows are a 400-row sample stratified by OLD score band x source x region x job type

@@ -8,7 +8,7 @@ Internships used to get a lower bar (55) when they were a priority. As of
 one-year rule likely rules out an internship inside her first academic year. Same
 bar for both now; a 70 floor still leaves ~2.3K internships (280 in Seattle).
 
-Bhumika's own data (applications, coffee chats, todos, recommendations, STAR
+The candidate's own data (applications, coffee chats, todos, recommendations, STAR
 stories, mock sessions) deliberately does NOT live here — it lives in
 data/user_data.json via src/user_store.py. It used to be copied into this file,
 which meant every push of this DB overwrote whatever she'd typed on the hosted

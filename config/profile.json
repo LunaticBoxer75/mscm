@@ -150,6 +150,548 @@
       "15+ years"
     ]
   },
+  "identity": {
+    "short_intro": "an MSCM student at UW Foster with {years} years in risk & operations at Uber",
+    "long_intro": "an MSCM student at UW Foster (graduating June 2027) with {years} years of risk, compliance and operations experience at Uber",
+    "school_short": "UW Foster",
+    "linkedin_school_id": "2584",
+    "current_study": "Incoming MSCM at University of Washington - Foster School of Business",
+    "degree": "Master of Supply Chain Management (MSCM)",
+    "graduation": "June 2027",
+    "home_city": "Seattle",
+    "app_title": "MSCM Job Search",
+    "salary_benchmark": {"label": "MSCM class avg", "amount": 108000},
+    "brand_subtitle": "Bhumika Choudhary · UW Foster MSCM '27",
+    "github_repo": "LunaticBoxer75/mscm"
+  },
+  "skills_have": {
+    "certs": ["Lean Six Sigma", "PMP"],
+    "insights": [
+      "Analytical / critical thinking",
+      "Attention to detail",
+      "Collaboration / teamwork",
+      "Communication",
+      "Data analysis / analytics",
+      "Data visualization",
+      "Excel / Spreadsheets",
+      "Process improvement",
+      "Project management",
+      "Risk management",
+      "SQL",
+      "Stakeholder management",
+      "Time management / prioritization"
+    ],
+    "projects": [
+      "data_analysis",
+      "fraud_detection",
+      "google_workspace",
+      "jira",
+      "process_optimization",
+      "project_management",
+      "risk_analysis",
+      "six_sigma",
+      "sql",
+      "stakeholder_management"
+    ],
+    "report": [
+      "Communication",
+      "Data Visualization",
+      "Excel Advanced",
+      "Lean/Six Sigma",
+      "Project Management",
+      "SQL"
+    ]
+  },
+  "seed": {
+    "interview_recs": [
+      [
+        "Stories should be so clear and transitional the interviewer can easily take notes and discuss with their team — structured, impactful, not complicated",
+        "Story Craft",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Apply STAR method to every story, categorized by behavioral theme (conflict, prioritization, etc.)",
+        "Story Craft",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Interviews dive progressively deeper — be ready for follow-up layers on every story",
+        "Interview Dynamics",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Interview math: ~150 applications → ~5 interviews → aim to convert 4 of 5. Getting the interview is half the battle; converting is the skill",
+        "Strategy",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Start interview prep VERY early — don't wait",
+        "Timing",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Understand your portfolio projects deeply: how built, how AI was used, real impact — depth matters as much as having the project",
+        "Portfolio",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Tailor resume + portfolio to each company's cultural values (e.g., Amazon Leadership Principles)",
+        "Company Fit",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Leverage unique background (Microbiology + Uber policy/risk + SCM + AI) — companies like Google value it",
+        "Positioning",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Broaden target roles: Product, Program, Vendor, and general Management — not just SCM",
+        "Role Targeting",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ],
+      [
+        "Do a mock interview every 2 weeks to keep stories sharp and learn current top questions",
+        "Practice",
+        "Shivam Suru",
+        "AI Product Manager, Amazon"
+      ]
+    ],
+    "todos": [
+      [
+        "Brainstorm how to translate unique background (Microbiology + Uber policy/risk + SCM + AI) into a marketable strength for interviews & applications",
+        "positioning",
+        "Shivam Suru",
+        "high"
+      ],
+      [
+        "Build STAR stories categorized by behavioral theme (conflict, prioritization, leadership, failure, ambiguity)",
+        "interview-prep",
+        "Shivam Suru",
+        "high"
+      ],
+      [
+        "Compile top 20-40 H1B sponsoring companies and tailor resume to each culture",
+        "job-search",
+        "Shivam Suru",
+        "high"
+      ],
+      [
+        "Schedule 2 coffee chats/week + 1 senior/partner chat",
+        "networking",
+        "Shivam Suru",
+        "medium"
+      ],
+      [
+        "Do 1 mock interview every 2 weeks",
+        "interview-prep",
+        "Shivam Suru",
+        "medium"
+      ]
+    ]
+  },
+  "manual_answers": {
+    "Will you now or in the future require sponsorship?": "Yes — F-1 student; will need H-1B sponsorship after OPT.",
+    "Work authorization": "F-1 student. OPT from ~June 2027 (12 months), then the 24-month STEM extension with an E-Verify employer.",
+    "Earliest start date": "June 2027 (after MSCM graduation, once the OPT EAD arrives).",
+    "Graduation": "MSCM, June 2027."
+  },
+  "pass2_rubric": [
+    "## Scoring Criteria (weights)",
+    "1. Role Relevance (25%): risk / compliance / trust & safety / fraud / operations roles rank HIGHEST",
+    "   (her direct Uber background), then supply chain (procurement, sourcing, planning, logistics,",
+    "   inventory), then program / product management. Technical roles are NOT a priority: a",
+    "   non-technical Program / Product Manager ranks well above a TPM.",
+    "2. Skills Match (20%): overlap with the skills in her profile.",
+    "3. Experience Fit (15%): 4 years (Global SME, Uber Risk & Compliance) plus an MSCM (UW Foster,",
+    "   June 2026 - June 2027). Entry-to-mid level.",
+    "4. Location Match (15%): Seattle & Eastside > remote > rest of WA > rest of USA.",
+    "5. Company Tier (10%): established employers, especially ones that sponsor visas.",
+    "6. Growth Potential (10%): career trajectory.",
+    "7. Visa Friendliness (5%): F-1 student -> OPT (STEM, 3 years) -> H-1B.",
+    "",
+    "## Hard rules — read the description for these; they override the weights",
+    "- Requires U.S. citizenship, a security clearance, or \"U.S. person\" status (ITAR/EAR): score <= 15,",
+    "  red flag \"not F-1 eligible\". She cannot legally take these.",
+    "- States it will not sponsor now or in the future, or won't support STEM OPT / doesn't use E-Verify:",
+    "  score <= 40 and say which in red_flags.",
+    "- REQUIRED experience (not \"preferred\"), vs her 4 years + master's: 7+ years -> <= 40;",
+    "  6 years -> <= 65; 5 years -> NO cap (one year short is routinely accepted with a master's; note",
+    "  \"one year short\" in red_flags). \"2+ required, 5+ preferred\" is fine.",
+    "- Clinical, retail-store, food-service, driving/CDL, warehouse-associate, trades, or engineering",
+    "  roles that merely contain words like \"operations\" or \"program manager\": <= 20.",
+    "- Technical Program / Project / Product Manager (TPM), or any PM role whose core is engineering /",
+    "  hands-on technical work: score <= 72, red flag \"technical role — lower priority\". Non-technical",
+    "  program, product and operations roles rank above these.",
+    "- Full-time is her priority; internships are a fallback. A title filed as an internship that is",
+    "  really a senior full-time role: say so in red_flags.",
+    "- Only if the posting STATES a start date before her June 2027 graduation, add red flag \"start date",
+    "  before June 2027\" (don't lower the score for this alone). Don't infer it from an open posting.",
+    "",
+    "Score anchors: 90+ apply today · 75-89 strong fit · 60-74 plausible stretch · <60 not worth her time."
+  ],
+  "scoring": {
+    "internships": "fallback",
+    "needs_visa_sponsorship": true,
+    "technical_pm_cap": 72,
+    "excluded_fields": ["clinical", "healthcare", "food", "retail", "driving", "warehouse", "trades", "unrelated", "engineering", "it_security"],
+    "home_area": {
+      "label": "Seattle area",
+      "core_label": "Seattle / Eastside",
+      "state": "WA",
+      "state_name": "Washington",
+      "core_cities": [
+        "seattle",
+        "bellevue",
+        "redmond",
+        "kirkland"
+      ],
+      "near_cities": [
+        "bothell",
+        "renton",
+        "kent",
+        "tukwila",
+        "seatac",
+        "burien",
+        "issaquah",
+        "sammamish",
+        "woodinville",
+        "lynnwood",
+        "mercer island",
+        "shoreline",
+        "kenmore",
+        "mountlake terrace",
+        "edmonds",
+        "mill creek",
+        "everett",
+        "mukilteo",
+        "federal way",
+        "auburn",
+        "des moines",
+        "covington",
+        "maple valley",
+        "snoqualmie",
+        "newcastle",
+        "tacoma",
+        "fife",
+        "puyallup",
+        "sumner",
+        "lakewood",
+        "algona",
+        "pacific",
+        "edgewood",
+        "lake stevens",
+        "marysville",
+        "monroe",
+        "snohomish",
+        "bainbridge island",
+        "king county",
+        "normandy park",
+        "duvall",
+        "north bend",
+        "lake forest park",
+        "medina",
+        "clyde hill",
+        "milton",
+        "dupont"
+      ]
+    },
+    "role_families": [
+      {
+        "points": 50,
+        "label": "risk/compliance",
+        "title_patterns": [
+          "fraud",
+          "anti-?fraud",
+          "trust (?:&|and) safety",
+          "t&s",
+          "kyc",
+          "aml",
+          "bsa",
+          "anti-?money laundering",
+          "financial crimes?",
+          "sanctions",
+          "compliance",
+          "grc",
+          "risk",
+          "trade compliance",
+          "export compliance",
+          "import compliance"
+        ]
+      },
+      {
+        "points": 49,
+        "label": "operations analytics",
+        "title_patterns": [
+          "operations analysts?",
+          "ops analysts?",
+          "operational excellence",
+          "operations excellence",
+          "business operations",
+          "biz ?ops",
+          "strategy (?:&|and) operations",
+          "operations strategy",
+          "operations (?:planning|analytics|research|programs?|excellence|intelligence|insights)",
+          "process (?:improvement|excellence|optimization|analyst)",
+          "continuous improvement",
+          "lean",
+          "six sigma",
+          "program operations",
+          "marketplace operations",
+          "global operations"
+        ]
+      },
+      {
+        "points": 47,
+        "label": "supply chain",
+        "title_patterns": [
+          "supply chain",
+          "supply (?:planner|planning|manager|analyst|base|operations|management)",
+          "demand (?:planner|planning|analyst|forecast\\w*|manager|management)",
+          "s ?& ?op",
+          "sales (?:and|&) operations planning",
+          "inventory (?:analyst|planner|planning|manager|management|optimization|strategy|control)",
+          "materials? (?:planner|planning|manager|management|analyst|program|requirements)",
+          "mrp",
+          "procurement",
+          "purchasing",
+          "purchaser",
+          "buyers?",
+          "(?:strategic )?sourcing",
+          "category (?:manager|management|analyst|specialist|lead)",
+          "commodity (?:manager|analyst|specialist|lead)",
+          "vendor (?:manager|management|operations|analyst|specialist|relations)",
+          "supplier (?:management|manager|development|diversity|relations|performance|operations|quality)",
+          "logistics",
+          "transportation (?:analyst|planner|planning|coordinator|specialist|manager|operations|procurement)",
+          "freight",
+          "customs",
+          "import",
+          "export",
+          "trade (?:operations|analyst|specialist)",
+          "fulfillment (?:analyst|planner|manager|operations|specialist|strategy)",
+          "distribution (?:analyst|planner|planning|strategy)",
+          "network (?:planning|planner|design)",
+          "capacity (?:planning|planner|analyst|manager)",
+          "production (?:planner|planning|scheduler|control)",
+          "master scheduler",
+          "replenishment",
+          "allocation (?:analyst|specialist|manager)",
+          "merchandise plann\\w*",
+          "assortment plann\\w*",
+          "s2p",
+          "p2p",
+          "procure-to-pay",
+          "source-to-pay"
+        ]
+      },
+      {
+        "points": 44,
+        "label": "planning",
+        "title_patterns": [
+          "planning analyst",
+          "planners?",
+          "expedit\\w*",
+          "transportation",
+          "shipping",
+          "warehousing",
+          "contracts? (?:administrator|specialist|manager|analyst|coordinator)"
+        ]
+      },
+      {
+        "points": 44,
+        "label": "risk-adjacent",
+        "title_patterns": [
+          "investigations?",
+          "investigators?",
+          "integrity",
+          "abuse",
+          "anti-?abuse",
+          "disputes?",
+          "chargebacks?",
+          "appeals",
+          "policy enforcement",
+          "content (?:review|moderation|policy)",
+          "internal controls?",
+          "sox",
+          "controls? (?:analyst|specialist|testing|manager)",
+          "regulatory",
+          "privacy",
+          "ethics",
+          "governance",
+          "quality (?:analyst|assurance|specialist|auditor|program|analytics|lead)",
+          "audit(?:or|ors|ing)?"
+        ]
+      },
+      {
+        "points": 44,
+        "label": "program management",
+        "title_patterns": [
+          "program managers?",
+          "technical program managers?",
+          "tpm",
+          "program management",
+          "pmo",
+          "project managers?",
+          "project management",
+          "strategic initiatives"
+        ]
+      },
+      {
+        "points": 38,
+        "label": "PM / business-analysis adjacent",
+        "title_patterns": [
+          "program (?:coordinator|specialist|lead|analyst|associate|administrator)",
+          "project (?:coordinator|analyst|specialist|associate|lead|administrator)",
+          "product managers?",
+          "product management",
+          "product operations",
+          "transformation",
+          "change management",
+          "chief of staff",
+          "implementation (?:manager|specialist|consultant|lead)",
+          "engagement manager",
+          "delivery manager",
+          "strategy (?:analyst|associate|manager|consultant)",
+          "business analysts?",
+          "rotational",
+          "leadership development",
+          "management trainee",
+          "mba",
+          "operations research"
+        ]
+      },
+      {
+        "points": 38,
+        "label": "generic operations",
+        "title_patterns": [
+          "operations (?:manager|specialist|coordinator|associate|supervisor|lead|administrator)s?",
+          "operations (?:interns?|internships?|co-?ops?)",
+          "ops (?:manager|specialist|coordinator|associate)",
+          "data analysts?"
+        ]
+      },
+      {
+        "points": 32,
+        "label": "generic operations / data",
+        "title_patterns": [
+          "operations",
+          "operational",
+          "ops",
+          "(?:bi|business intelligence|reporting|analytics|insights) analysts?",
+          "analytics",
+          "consultants?",
+          "planning"
+        ]
+      },
+      {
+        "points": 22,
+        "label": "generic",
+        "title_patterns": [
+          "analysts?",
+          "specialists?",
+          "coordinators?",
+          "associates?",
+          "managers?",
+          "mgr",
+          "administrators?",
+          "interns?",
+          "internships?",
+          "co-?op",
+          "officers?",
+          "advisors?",
+          "lead"
+        ]
+      }
+    ],
+    "top_families": [
+      "operations analytics",
+      "program management",
+      "risk/compliance",
+      "supply chain"
+    ],
+    "core_target_terms": [
+      "supply chain",
+      "procurement",
+      "purchasing",
+      "buyers?",
+      "sourcing",
+      "inventory",
+      "logistics",
+      "compliance",
+      "risk",
+      "fraud",
+      "audit\\w*",
+      "planners?",
+      "planning",
+      "materials?",
+      "vendors?",
+      "suppliers?",
+      "contracts?",
+      "trade",
+      "customs"
+    ],
+    "relevance_words": [
+      "aml",
+      "audit",
+      "auditing",
+      "audits",
+      "automation",
+      "compliance",
+      "cross-functional",
+      "dashboard",
+      "dashboards",
+      "escalation",
+      "escalations",
+      "excel",
+      "forecasting",
+      "fraud",
+      "inventory",
+      "investigation",
+      "investigations",
+      "jira",
+      "kpi",
+      "kpis",
+      "kyc",
+      "lean",
+      "policies",
+      "policy",
+      "procurement",
+      "sop",
+      "sops",
+      "sql",
+      "stakeholder",
+      "stakeholders",
+      "supplier",
+      "suppliers",
+      "tableau",
+      "triage",
+      "vendor",
+      "vendors",
+      "workflow",
+      "workflows"
+    ],
+    "relevance_phrases": [
+      "risk (?:assessment|management|mitigation|analysis)",
+      "standard operating procedures?",
+      "process improvements?",
+      "root cause",
+      "quality assurance",
+      "power bi",
+      "six sigma",
+      "supply chain",
+      "data analysis",
+      "trust (?:&|and) safety"
+    ]
+  },
   "scoring_weights": {
     "role_relevance": 0.25,
     "skills_match": 0.20,

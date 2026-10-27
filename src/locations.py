@@ -93,12 +93,14 @@ def metro_of(location):
 
 
 def region_of(location, is_remote=False, title=""):
-    """'seattle' only when the job is actually in the Seattle area, else 'national'.
+    """'seattle' only when the job is actually in the home area, else 'national'.
 
-    Decided by where the job is — not by which search returned it (a Seattle-area
-    search also returns Olympia, Spokane, and out-of-state postings).
+    'seattle' is the internal id of the home area set in config/profile.json
+    (scoring.home_area); the stored rows use it, so it is not renamed per candidate.
+    Decided by where the job is — not by which search returned it (a home-area
+    search also returns out-of-area postings).
     """
-    from .quick_scorer import _location_points  # lazy: quick_scorer imports scraper
+    from .quick_scorer import HOME_LABELS, _location_points  # lazy: quick_scorer imports scraper
 
     _, label = _location_points(location, is_remote, title)
-    return "seattle" if label in ("Seattle / Eastside", "Seattle area") else "national"
+    return "seattle" if label in HOME_LABELS else "national"

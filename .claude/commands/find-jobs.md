@@ -512,13 +512,16 @@ exported, prune + cleanup counts, deploy DB size.
 
 ## Key Files
 
-- Candidate profile, search prefs (`min_store_score`, `scrape_workers`, locations): `config/profile.json`
+- Candidate profile, search prefs (`min_store_score`, `scrape_workers`, locations): `config/profile.json`.
+  It also holds every person-specific rule: Pass-1 `scoring` (role families, home area, keywords,
+  exclusions, TPM cap), the Pass-2 `pass2_rubric`, intro text, skills she has, seed to-dos. Change her
+  priorities THERE, not in `src/quick_scorer.py` / `src/scorer.py` (loaded by `src/profile.py`).
 - Searches (34): `config/search_queries.json` · Company sizes: `config/company_sizes.json`
 - **Jobs (local, full):** `data/jobs.db` — gitignored; one row per posting URL; only 70+ kept
 - **Dashboard jobs:** `data/jobs_deploy.db` → `jobs-data` branch (`scripts/publish_jobs_db.py`),
   downloaded by the app (`src/jobs_data.py`)
 - **Her data:** `user-data` branch `data/user_data.json` via `src/user_store.py`
-- Pass 1: `src/quick_scorer.py` · Pass 2 rubric: `src/scorer.py` `batch_score_prompt`
+- Pass 1: `src/quick_scorer.py` · Pass 2 prompt: `src/scorer.py` `batch_score_prompt` (rubric text: profile `pass2_rubric`)
 - Where a job is: `src/locations.py` · Company size: `src/company_size.py`
 - Scraper: `src/scraper.py` (`classify_job_type`, parallel fetch) · Export: `scripts/export_deploy_db.py`
 - One-off/maintenance: `scripts/rescore_all.py`, `scripts/dedupe_jobs.py`, `scripts/eval_quick_scorer.py`,

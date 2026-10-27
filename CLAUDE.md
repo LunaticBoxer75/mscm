@@ -73,6 +73,8 @@ src/company_size.py         ← Size tiers from config/company_sizes.json (top ~
 src/projects.py             ← Auto-generate portfolio projects from skill gaps
 src/referrals.py            ← LinkedIn referral link generator (search links only, never scraped)
 src/pipeline.py             ← Orchestrator (full pipeline or individual steps)
+src/profile.py              ← Loads config/profile.json; every person-specific rule and text lives there
+scripts/export_template.py  ← Builds a shareable copy with nobody's personal data (see below)
 app.py                      ← Streamlit dashboard, 14 pages via st.navigation (local + Cloud)
 src/jobs_data.py            ← Downloads the deploy DB from the jobs-data branch
 scripts/publish_jobs_db.py  ← Publishes the deploy DB to jobs-data (single commit, force-replaced)
@@ -81,6 +83,22 @@ scripts/smoke_test_pages.py ← Renders all 14 pages headlessly; exit 1 on any e
 scripts/export_deploy_db.py ← Trim + prune → data/jobs_deploy.db
 scripts/migrate_user_data.py ← One-time SQLite → user_data.json migration (idempotent)
 ```
+
+## Person-specific config and the shareable template
+
+Everything about her is in `config/profile.json`: the Pass-1 `scoring` block (role families + title
+patterns, home area, description keywords, `excluded_fields`, `needs_visa_sponsorship`, internships
+fallback, TPM cap), the Pass-2 `pass2_rubric`, `identity` (intro sentences, home city, app title, salary
+benchmark, GitHub repo), `skills_have`, `seed` (mentor recs and standing to-dos) and `manual_answers`.
+Moving these out of the code (2026-10-27) changed none of her 15,290 scores or the Pass-2 prompt.
+`config/profile.example.json` is a fictional profile for other people.
+
+**Sharing:** never share this repo or a branch of it. Anyone who can read it can read every branch and
+all history, which holds her data (old deploy DBs on `main`, the whole `user-data` branch). Instead run
+`python scripts/export_template.py <empty dir>`: it copies the code without personal files, puts the
+example profile in place, and exits 1 listing anything identifying that is left. Push that copy as a
+NEW repository with a fresh history. Docs and content in the copy need a manual pass first (they are
+written about her). Template repo: `LunaticBoxer75/job-search-template` (private).
 
 ## Data Stores — three branches, deliberately separate
 

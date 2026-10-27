@@ -5,7 +5,7 @@ Backed by src/user_store.py (durable JSON), not SQLite — see that module for w
 
 from datetime import datetime
 
-from . import user_store
+from . import profile, user_store
 
 
 def _todo(item, category="general", source="manual", priority="medium"):
@@ -65,14 +65,8 @@ def import_coffee_chat_actions():
 
 
 def seed_defaults():
-    """Seed important standing to-dos if not present."""
-    defaults = [
-        ("Brainstorm how to translate unique background (Microbiology + Uber policy/risk + SCM + AI) into a marketable strength for interviews & applications", "positioning", "Shivam Suru", "high"),
-        ("Build STAR stories categorized by behavioral theme (conflict, prioritization, leadership, failure, ambiguity)", "interview-prep", "Shivam Suru", "high"),
-        ("Compile top 20-40 H1B sponsoring companies and tailor resume to each culture", "job-search", "Shivam Suru", "high"),
-        ("Schedule 2 coffee chats/week + 1 senior/partner chat", "networking", "Shivam Suru", "medium"),
-        ("Do 1 mock interview every 2 weeks", "interview-prep", "Shivam Suru", "medium"),
-    ]
+    """Seed the standing to-dos listed in config/profile.json (seed.todos) if not present."""
+    defaults = profile.load().get("seed", {}).get("todos", [])
     existing = {t.get("item") for t in user_store.get("todos")}
     new = [_todo(i, c, s, p) for i, c, s, p in defaults if i not in existing]
     if new:

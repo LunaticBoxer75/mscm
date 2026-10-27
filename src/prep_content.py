@@ -92,7 +92,7 @@ def by_domain(rows, domain):
 def find_company(name):
     """Match a scraped company name to a curated entry, on whole words only.
 
-    Plain substring matching sent "J.M. Huber Corporation" to Uber's entry. Same
+    Plain substring matching sent "J.M. Huber Corporation" to the wrong company's entry. Same
     class of bug as "intern" matching "Internal" — word boundaries, always.
     """
     if not name:

@@ -4,10 +4,11 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from . import profile
 from .scraper import get_db
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
-MSCM_AVG_SALARY = 108000
+_BENCH = profile.identity()["salary_benchmark"]
 
 
 def _format_job_entry(job):
@@ -105,21 +106,21 @@ def generate_daily_report(min_score=50, limit=50):
     # Salary benchmark
     salaries = [j["salary_min"] for j in all_jobs if j.get("salary_min")]
     avg_salary_str = f"${sum(salaries)/len(salaries):,.0f}" if salaries else "N/A"
-    above_mscm = len([s for s in salaries if s >= MSCM_AVG_SALARY])
+    above_mscm = len([s for s in salaries if s >= _BENCH["amount"]])
 
     report_lines = [
         f"# Daily Job Report - {today}",
         f"",
         f"**Total matches:** {len(all_jobs)} jobs scoring {min_score}+",
-        f"**Salary benchmark:** Avg found: {avg_salary_str} | MSCM class avg: ${MSCM_AVG_SALARY:,} | {above_mscm} jobs above avg",
+        f"**Salary benchmark:** Avg found: {avg_salary_str} | {_BENCH['label']}: ${_BENCH['amount']:,} | {above_mscm} jobs above avg",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"",
         f"---",
         f"",
     ]
 
-    report_lines.append(_section_jobs(seattle_ft, "Seattle & Area — Full-Time"))
-    report_lines.append(_section_jobs(seattle_intern, "Seattle & Area — Internships"))
+    report_lines.append(_section_jobs(seattle_ft, f"{profile.home_label()} — Full-Time"))
+    report_lines.append(_section_jobs(seattle_intern, f"{profile.home_label()} — Internships"))
     report_lines.append(_section_jobs(national_ft, "Rest of USA — Full-Time"))
     report_lines.append(_section_jobs(national_intern, "Rest of USA — Internships"))
 
@@ -189,7 +190,7 @@ def get_stats():
 
 
 def generate_skills_gap_report():
-    """Analyze commonly requested skills across top jobs that Bhumika may not have."""
+    """Analyze commonly requested skills across top jobs that the candidate may not have."""
     conn = get_db()
     cursor = conn.execute("""
         SELECT description FROM jobs
@@ -223,8 +224,7 @@ def generate_skills_gap_report():
         "Communication": ["stakeholder", "cross-functional", "presentation"],
     }
 
-    # Bhumika's current skills
-    has_skills = {"SQL", "Lean/Six Sigma", "Project Management", "Communication", "Excel Advanced", "Data Visualization"}
+    has_skills = set(profile.load()["skills_have"]["report"])
 
     skill_frequency = {}
     total_jobs = len(descriptions)
@@ -263,9 +263,9 @@ def generate_skills_gap_report():
 
     lines.extend([
         "",
-        "## Recommended Focus Areas for MSCM Coursework",
+        "## Recommended Focus Areas",
         "",
-        "Skills most commonly requested that Bhumika should prioritize:",
+        f"Skills most commonly requested that {profile.first_name()} should prioritize:",
         "",
     ])
 

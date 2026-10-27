@@ -1,4 +1,4 @@
-"""Durable store for Bhumika's own data (not scraped jobs).
+"""Durable store for the candidate's own data (not scraped jobs).
 
 Why this exists: the dashboard runs on Streamlit Cloud, whose filesystem is
 ephemeral. Her data used to live in `data/jobs_deploy.db`, a git-committed file
@@ -40,13 +40,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from . import profile as _profile
+
 try:
     import requests
 except ImportError:  # requests ships with streamlit, but keep local CLI usable
     requests = None
 
 PATH = Path(__file__).parent.parent / "data" / "user_data.json"
-REPO = os.environ.get("MSCM_GITHUB_REPO", "LunaticBoxer75/mscm")
+# owner/name of the GitHub repo that holds the user-data and jobs-data branches
+REPO = os.environ.get("MSCM_GITHUB_REPO") or _profile.identity()["github_repo"]
 BRANCH = os.environ.get("MSCM_GITHUB_BRANCH", "user-data")  # never main — see docstring
 API = f"https://api.github.com/repos/{REPO}/contents/data/user_data.json"
 

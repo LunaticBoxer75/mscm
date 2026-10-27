@@ -1,5 +1,5 @@
 """Resume rephrase engine — given a job description, suggest how to rephrase
-each of Bhumika's resume bullets to match the JD's keywords/verbs.
+each of the candidate's resume bullets to match the JD's keywords/verbs.
 
 Two modes:
 1. Show side-by-side: original bullet → suggested rephrase
@@ -14,7 +14,7 @@ CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 
 def get_base_bullets():
-    """Get Bhumika's base resume bullets from profile."""
+    """Get the candidate's base resume bullets from profile."""
     with open(CONFIG_DIR / "profile.json") as f:
         profile = json.load(f)
     return profile.get("key_achievements", [])
@@ -56,7 +56,7 @@ def extract_jd_keywords(description, top_n=20):
 
 
 def get_resume_keywords():
-    """Keywords currently in Bhumika's resume (from profile + achievements)."""
+    """Keywords currently in the candidate's resume (from profile + achievements)."""
     with open(CONFIG_DIR / "profile.json") as f:
         profile = json.load(f)
 

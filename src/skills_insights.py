@@ -17,6 +17,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from . import profile
+
 # Prefer the deploy DB (bundled on Streamlit Cloud), fall back to full local DB
 _DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -77,14 +79,9 @@ CERTIFICATIONS = {
     "CFA": ["cfa"],
 }
 
-# Skills Bhumika already has (to flag gaps)
-HAS_SKILLS = {
-    "Excel / Spreadsheets", "SQL", "Data analysis / analytics", "Data visualization",
-    "Communication", "Stakeholder management", "Process improvement", "Project management",
-    "Analytical / critical thinking", "Risk management", "Attention to detail",
-    "Collaboration / teamwork", "Time management / prioritization",
-}
-HAS_CERTS = {"Lean Six Sigma", "PMP"}
+# Skills and certifications the candidate already has (to flag gaps) — config/profile.json
+HAS_SKILLS = set(profile.load()["skills_have"]["insights"])
+HAS_CERTS = set(profile.load()["skills_have"]["certs"])
 
 
 def _pattern(variants):

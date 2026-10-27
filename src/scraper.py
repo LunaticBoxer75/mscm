@@ -55,11 +55,12 @@ def get_db():
             region TEXT DEFAULT 'seattle'
         )
     """)
-    # Add region column if upgrading from old schema
-    try:
-        conn.execute("ALTER TABLE jobs ADD COLUMN region TEXT DEFAULT 'seattle'")
-    except sqlite3.OperationalError:
-        pass
+    # Columns added after the first schema (the export reads `dismissed`)
+    for col in ("region TEXT DEFAULT 'seattle'", "dismissed INTEGER DEFAULT 0"):
+        try:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     # One row per posting URL, so INSERT OR IGNORE dedups by URL even for rows
     # stored under the old per-process random ids. Creation fails while duplicate
     # URLs exist; scripts/dedupe_jobs.py removes them and creates it.
@@ -205,7 +206,7 @@ def scrape_all_jobs(sites=None, hours_old=None, region=None):
     if hours_old is None:
         hours_old = prefs["hours_old"]
 
-    locations_seattle = prefs["locations_seattle"]
+    locations_seattle = prefs.get("locations_home") or prefs["locations_seattle"]  # home-area searches
     locations_national = prefs["locations_national"]
 
     if region == "seattle":

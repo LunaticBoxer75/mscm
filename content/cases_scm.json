@@ -41,7 +41,7 @@
       "You find that expedite freight tripled. What upstream failure usually causes that, and how would you prove it?",
       "If you can only fix one thing this quarter, and the savings have to show up in this fiscal year, what do you pick and why?"
     ],
-    "bhumika_angle": "Her Uber work was root-cause analysis on a leaky process where the headline number hid a mix of drivers, so the decomposition instinct is real - the 40% error-reduction project is a concrete example of finding the driver before building the fix. Her Lean Six Sigma Yellow Belt gives her legitimate language for yield, scrap, and variance. The honest gap is the cost side: she has never owned a COGS line, so she needs purchase price variance, standard costing, fixed versus variable cost, and how a P&L rolls up. Two focused weeks with a managerial accounting refresher closes it, and there is already a cheatsheet in this repo to start from."
+    "candidate_angle": "Her Uber work was root-cause analysis on a leaky process where the headline number hid a mix of drivers, so the decomposition instinct is real - the 40% error-reduction project is a concrete example of finding the driver before building the fix. Her Lean Six Sigma Yellow Belt gives her legitimate language for yield, scrap, and variance. The honest gap is the cost side: she has never owned a COGS line, so she needs purchase price variance, standard costing, fixed versus variable cost, and how a P&L rolls up. Two focused weeks with a managerial accounting refresher closes it, and there is already a cheatsheet in this repo to start from."
   },
   {
     "id": "scm-stockout-paradox",
@@ -85,7 +85,7 @@
       "How would you set a different service level for an A-item versus a C-item, and how would you defend a deliberately low target to a sales VP?",
       "If you had to release 20% of the inventory dollars in one quarter without hurting fill rate, what is your sequence?"
     ],
-    "bhumika_angle": "This is the closest SCM case to work she has actually done. The Uber appeals queue was a large aggregate backlog whose real problem was composition and triage rather than size, and her fraud triage project - 80% of fraudulent profiles surfaced through a segmentation step - is ABC/XYZ logic applied to a different variable. She can tell that story honestly. The gap is mechanics, not instinct: she needs to compute safety stock and reorder point by hand, read an inventory aging report, and speak fluently about cycle counting and record accuracy. That is a weekend of study plus one Excel model, and it is probably the highest-return prep item in this file because these numbers appear in almost every SCM loop."
+    "candidate_angle": "This is the closest SCM case to work she has actually done. The Uber appeals queue was a large aggregate backlog whose real problem was composition and triage rather than size, and her fraud triage project - 80% of fraudulent profiles surfaced through a segmentation step - is ABC/XYZ logic applied to a different variable. She can tell that story honestly. The gap is mechanics, not instinct: she needs to compute safety stock and reorder point by hand, read an inventory aging report, and speak fluently about cycle counting and record accuracy. That is a weekend of study plus one Excel model, and it is probably the highest-return prep item in this file because these numbers appear in almost every SCM loop."
   },
   {
     "id": "scm-make-vs-buy",
@@ -129,7 +129,7 @@
       "The vendor's minimum order quantity is three months of demand. What does that do to your analysis?",
       "If we outsource and the product then takes off, what have we lost, and how would you have preserved that option up front?"
     ],
-    "bhumika_angle": "Her compliance background is a genuine asset on the risk branch - she is comfortable asking who audits the supplier, what the documentation trail looks like, and what happens when a regulator or customer asks for evidence. That is a differentiated answer most candidates at her level cannot give. The honest gap is the cost engine: she has never built a landed-cost or should-cost model, and this case is won or lost on that math. Prep is concrete - build one landed-cost model in Excel for a real product with freight, duty, and carrying cost as switchable inputs, and be able to walk an interviewer through it from memory."
+    "candidate_angle": "Her compliance background is a genuine asset on the risk branch - she is comfortable asking who audits the supplier, what the documentation trail looks like, and what happens when a regulator or customer asks for evidence. That is a differentiated answer most candidates at her level cannot give. The honest gap is the cost engine: she has never built a landed-cost or should-cost model, and this case is won or lost on that math. Prep is concrete - build one landed-cost model in Excel for a real product with freight, duty, and carrying cost as switchable inputs, and be able to walk an interviewer through it from memory."
   },
   {
     "id": "scm-single-source-audit-fail",
@@ -173,7 +173,7 @@
       "Your plant manager wants to keep running on the suspect lots to hit the month. How do you handle that conversation?",
       "Six months later, how do you prove to your VP that this is actually fixed rather than just quiet?"
     ],
-    "bhumika_angle": "This is her strongest case in the file and she should not undersell it. Risk and compliance work at Uber is exactly this shape - a control fails, you contain the exposure, you trace what already got through, you drive corrective action, and you change the monitoring so it cannot recur silently. Her microbiology background is a second real asset rather than a curiosity: contamination control, batch and lot thinking, and the reflex to quarantine a suspect lot are the same instincts a supplier quality engineer uses. What she needs to add is manufacturing vocabulary - CAPA, 8D, PPAP, incoming inspection, PPM, escape rate - so genuine instincts land in the language the interviewer is listening for."
+    "candidate_angle": "This is her strongest case in the file and she should not undersell it. Risk and compliance work at Uber is exactly this shape - a control fails, you contain the exposure, you trace what already got through, you drive corrective action, and you change the monitoring so it cannot recur silently. Her microbiology background is a second real asset rather than a curiosity: contamination control, batch and lot thinking, and the reflex to quarantine a suspect lot are the same instincts a supplier quality engineer uses. What she needs to add is manufacturing vocabulary - CAPA, 8D, PPAP, incoming inspection, PPM, escape rate - so genuine instincts land in the language the interviewer is listening for."
   },
   {
     "id": "scm-new-product-forecast",
@@ -217,7 +217,7 @@
       "Three weeks after launch you are at 40% of plan. What do you do, and what would you have needed in place to act that fast?",
       "How would you make sure the company actually learns from this forecast rather than repeating it at the next launch?"
     ],
-    "bhumika_angle": "Her honest hook is not forecasting technique - it is estimation under uncertainty with stakeholders who disagree, which is what the global SME role required when setting policy thresholds on incomplete signal. She can also speak credibly about instrumenting a launch and checking whether the assumption held, because that is what a risk program does. The gap is quantitative and she should treat it as study rather than story: newsvendor logic, bias versus MAPE, and ramp-curve analog forecasting. One portfolio project - forecast a real product launch three ways, publish the range, then score yourself against actuals - converts this from her weakest case into a talking point."
+    "candidate_angle": "Her honest hook is not forecasting technique - it is estimation under uncertainty with stakeholders who disagree, which is what the global SME role required when setting policy thresholds on incomplete signal. She can also speak credibly about instrumenting a launch and checking whether the assumption held, because that is what a risk program does. The gap is quantitative and she should treat it as study rather than story: newsvendor logic, bias versus MAPE, and ramp-curve analog forecasting. One portfolio project - forecast a real product launch three ways, publish the range, then score yourself against actuals - converts this from her weakest case into a talking point."
   },
   {
     "id": "scm-lead-time-reduction",
@@ -261,7 +261,7 @@
       "The supplier says our order pattern is lumpy and that is why they queue us. How do you respond?",
       "What would you put on a supplier scorecard, and what behavior might each metric accidentally encourage?"
     ],
-    "bhumika_angle": "Cycle-time decomposition is genuinely her territory - the appeals queue at Uber was a lead-time problem with the same anatomy (intake, triage queue, handling time, rework loop), and her 80% escalation-time reduction came from attacking one specific segment rather than the total. She should tell it that way. The Yellow Belt gives her honest standing on value-stream and flow language. What she needs to add are the supply-chain-specific segments - dock-to-stock, customs clearance, ready-to-ship dwell - and the safety-stock math that converts variability into dollars, because that conversion is what makes the recommendation fundable."
+    "candidate_angle": "Cycle-time decomposition is genuinely her territory - the appeals queue at Uber was a lead-time problem with the same anatomy (intake, triage queue, handling time, rework loop), and her 80% escalation-time reduction came from attacking one specific segment rather than the total. She should tell it that way. The Yellow Belt gives her honest standing on value-stream and flow language. What she needs to add are the supply-chain-specific segments - dock-to-stock, customs clearance, ready-to-ship dwell - and the safety-stock math that converts variability into dollars, because that conversion is what makes the recommendation fundable."
   },
   {
     "id": "scm-tariff-shock",
@@ -305,6 +305,6 @@
       "A supplier offers to ship through a third country so the paperwork shows a different origin. What do you say, and what do you do next?",
       "Six months later the duty is rescinded. What did you do differently because you knew that was possible?"
     ],
-    "bhumika_angle": "This is the case where her background is an outright advantage rather than a translation. Trade compliance is regulatory work - classification, documentation, defensible positions, audit trail, and the discipline to decline a shortcut - which is what a global SME in risk and compliance does daily. Her instinct to ask whether a position can be documented if someone asks is exactly what this case rewards and is rare at her level. What she needs is the specific domain: HTS classification basics, what a foreign trade zone and duty drawback actually do, substantial transformation, and how landed cost is built. That is a reading project measured in days, and it may be the highest-leverage niche she could claim in a Seattle market full of large importers like Costco, Nordstrom, Starbucks, PACCAR, and Boeing."
+    "candidate_angle": "This is the case where her background is an outright advantage rather than a translation. Trade compliance is regulatory work - classification, documentation, defensible positions, audit trail, and the discipline to decline a shortcut - which is what a global SME in risk and compliance does daily. Her instinct to ask whether a position can be documented if someone asks is exactly what this case rewards and is rare at her level. What she needs is the specific domain: HTS classification basics, what a foreign trade zone and duty drawback actually do, substantial transformation, and how landed cost is built. That is a reading project measured in days, and it may be the highest-leverage niche she could claim in a Seattle market full of large importers like Costco, Nordstrom, Starbucks, PACCAR, and Boeing."
   }
 ]

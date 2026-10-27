@@ -2,7 +2,7 @@
 
 The workflow:
 1. Analyze top-scoring job descriptions to find commonly requested skills
-2. Compare against Bhumika's existing skills to identify gaps
+2. Compare against the candidate's existing skills to identify gaps
 3. Only generate a project when a gap is genuinely significant (15%+ of top jobs)
 4. Each project is a COMPLETE package: README + runnable code + requirements
 
@@ -14,17 +14,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from . import profile
 from .scraper import get_db
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 PROJECTS_DIR = Path(__file__).parent.parent / "projects"
 
-# Skills Bhumika already has (from resume)
-EXISTING_SKILLS = {
-    "sql", "jira", "process_optimization", "data_analysis",
-    "project_management", "stakeholder_management", "six_sigma",
-    "fraud_detection", "risk_analysis", "google_workspace",
-}
+# Skills the candidate already has — config/profile.json
+EXISTING_SKILLS = set(profile.load()["skills_have"]["projects"])
 
 # Skill detection keywords
 SKILL_KEYWORDS = {
@@ -44,7 +41,7 @@ SKILL_KEYWORDS = {
 
 
 def identify_skill_gaps(min_score=55, min_jobs=50):
-    """Analyze job listings to find most-requested skills Bhumika doesn't have."""
+    """Analyze job listings to find most-requested skills the candidate doesn't have."""
     conn = get_db()
     cursor = conn.execute("""
         SELECT description FROM jobs
@@ -122,7 +119,7 @@ def generate_project_index():
         return
 
     lines = [
-        "# Portfolio Projects for MSCM Job Search",
+        "# Portfolio Projects for the Job Search",
         "",
         "Projects generated based on skill gaps found in target job listings.",
         "",

@@ -8,12 +8,13 @@ refine Indeed rows.
 Score = role + (role / 50) x (seniority fit + location + employer H-1B strength
         + freshness + description signals) + penalties, then hard caps.
 Role relevance gates the rest, so a borderline title with perfect context cannot outrank
-a core title with average context. Role priority follows her background: Risk /
-Compliance / Fraud / Ops analytics > Supply chain & procurement > Program management.
-Caps remove what she cannot take or should not see near the top: clinical, food
-service, retail store, driving, warehouse labor, trades; security clearance, U.S.-person
-(ITAR) or citizen-only roles and federal agencies (F-1); director-and-above; senior /
-manager titles filed under internships. Scores carry one decimal so the top band ranks.
+a core title with average context. Role families, their priority, the home area and the
+description keywords come from config/profile.json ("scoring"), so the same rules can
+serve another candidate. Caps remove what the candidate cannot take or should not see near
+the top: the `excluded_fields` (clinical, food service, retail store, ...); when
+`needs_visa_sponsorship` is set, security clearance, U.S.-person (ITAR) or citizen-only
+roles and federal agencies; director-and-above; senior / manager titles filed under
+internships. Scores carry one decimal so the top band ranks.
 
 Every keyword rule uses word boundaries (a plain substring once matched "intern"
 inside "Internal" and mis-tagged 1,323 jobs).
@@ -27,14 +28,17 @@ import math
 import re
 from datetime import date, datetime
 
+from . import profile
 from .locations import metro_of
 from .scraper import get_db
 from .sponsor_data import _load_verified
 
 
-# Bhumika has 4 years of experience (Uber Risk & Compliance; user-confirmed 2026-09-27),
-# MSCM in progress (June 2027).
-CANDIDATE_YEARS = 4
+_CFG = profile.scoring()
+CANDIDATE_YEARS = profile.years()
+_NAME = profile.first_name()
+_EXCLUDED = set(_CFG.get("excluded_fields", []))
+_VISA = _CFG.get("needs_visa_sponsorship", False)
 
 
 def _words(*alts):
@@ -158,7 +162,7 @@ _TPM_PHRASE = re.compile(r"\btechnical (?:program|project) (?:manager|management
 _TECHNICAL_PM = re.compile(
     r"\btechnical (?:program|project|product) (?:manager|management|mgr|lead|owner)s?\b|\btpms?\b"
     r"|\b(?:program|project|product) (?:manager|management|mgr|lead)s?\s*[,(\-–|]\s*technical\b", re.I)
-TECHNICAL_PM_CAP = 72.0
+TECHNICAL_PM_CAP = _CFG.get("technical_pm_cap")  # null in the profile = no cap
 # Function mismatch: finance / HR / marketing / sales / legal. Not excluded (a "Supply Chain
 # Financial Analyst" is borderline-useful) but they cannot reach the top band.
 _FINANCE_FUNCTION = _words(
@@ -189,89 +193,11 @@ _TITLE_GOVERNMENT = _words(
     r"marine corps", r"dhs", r"public trust", r"skillbridge",
     r"military (?:development|program|fellowship|transition|spouse)", r"veterans? (?:program|fellowship|hiring)",
 )
-_TITLE_TARGET_CORE = _words(
-    r"supply chain", r"procurement", r"purchasing", r"buyers?", r"sourcing", r"inventory",
-    r"logistics", r"compliance", r"risk", r"fraud", r"audit\w*", r"planners?", r"planning",
-    r"materials?", r"vendors?", r"suppliers?", r"contracts?", r"trade", r"customs",
-)
+_TITLE_TARGET_CORE = _words(*_CFG["core_target_terms"])
 
 # Positive role families: (points, label, regex). The best-scoring match wins.
-# Priority per her background: Risk/Compliance/Ops > Supply chain > Program/Product mgmt.
-_FAMILIES = [
-    (50, "risk/compliance", _words(
-        r"fraud", r"anti-?fraud", r"trust (?:&|and) safety", r"t&s", r"kyc", r"aml", r"bsa",
-        r"anti-?money laundering", r"financial crimes?", r"sanctions", r"compliance", r"grc",
-        r"risk", r"trade compliance", r"export compliance", r"import compliance",
-    )),
-    (49, "operations analytics", _words(
-        r"operations analysts?", r"ops analysts?", r"operational excellence", r"operations excellence",
-        r"business operations", r"biz ?ops", r"strategy (?:&|and) operations", r"operations strategy",
-        r"operations (?:planning|analytics|research|programs?|excellence|intelligence|insights)",
-        r"process (?:improvement|excellence|optimization|analyst)", r"continuous improvement",
-        r"lean", r"six sigma", r"program operations", r"marketplace operations", r"global operations",
-    )),
-    (47, "supply chain", _words(
-        r"supply chain", r"supply (?:planner|planning|manager|analyst|base|operations|management)",
-        r"demand (?:planner|planning|analyst|forecast\w*|manager|management)", r"s ?& ?op",
-        r"sales (?:and|&) operations planning",
-        r"inventory (?:analyst|planner|planning|manager|management|optimization|strategy|control)",
-        r"materials? (?:planner|planning|manager|management|analyst|program|requirements)", r"mrp",
-        r"procurement", r"purchasing", r"purchaser", r"buyers?", r"(?:strategic )?sourcing",
-        r"category (?:manager|management|analyst|specialist|lead)",
-        r"commodity (?:manager|analyst|specialist|lead)",
-        r"vendor (?:manager|management|operations|analyst|specialist|relations)",
-        r"supplier (?:management|manager|development|diversity|relations|performance|operations|quality)",
-        r"logistics", r"transportation (?:analyst|planner|planning|coordinator|specialist|manager|operations|procurement)",
-        r"freight", r"customs", r"import", r"export", r"trade (?:operations|analyst|specialist)",
-        r"fulfillment (?:analyst|planner|manager|operations|specialist|strategy)",
-        r"distribution (?:analyst|planner|planning|strategy)", r"network (?:planning|planner|design)",
-        r"capacity (?:planning|planner|analyst|manager)",
-        r"production (?:planner|planning|scheduler|control)", r"master scheduler", r"replenishment",
-        r"allocation (?:analyst|specialist|manager)", r"merchandise plann\w*", r"assortment plann\w*",
-        r"s2p", r"p2p", r"procure-to-pay", r"source-to-pay",
-    )),
-    (44, "planning", _words(
-        r"planning analyst", r"planners?", r"expedit\w*", r"transportation", r"shipping", r"warehousing",
-        r"contracts? (?:administrator|specialist|manager|analyst|coordinator)",
-    )),
-    (44, "risk-adjacent", _words(
-        r"investigations?", r"investigators?", r"integrity", r"abuse", r"anti-?abuse", r"disputes?",
-        r"chargebacks?", r"appeals", r"policy enforcement", r"content (?:review|moderation|policy)",
-        r"internal controls?", r"sox", r"controls? (?:analyst|specialist|testing|manager)",
-        r"regulatory", r"privacy", r"ethics", r"governance",
-        r"quality (?:analyst|assurance|specialist|auditor|program|analytics|lead)",
-        r"audit(?:or|ors|ing)?",
-    )),
-    (44, "program management", _words(
-        r"program managers?", r"technical program managers?", r"tpm", r"program management", r"pmo",
-        r"project managers?", r"project management", r"strategic initiatives",
-    )),
-    (38, "PM / business-analysis adjacent", _words(
-        r"program (?:coordinator|specialist|lead|analyst|associate|administrator)",
-        r"project (?:coordinator|analyst|specialist|associate|lead|administrator)",
-        r"product managers?", r"product management", r"product operations", r"transformation",
-        r"change management", r"chief of staff", r"implementation (?:manager|specialist|consultant|lead)",
-        r"engagement manager", r"delivery manager", r"strategy (?:analyst|associate|manager|consultant)",
-        r"business analysts?", r"rotational", r"leadership development", r"management trainee",
-        r"mba", r"operations research",
-    )),
-    (38, "generic operations", _words(
-        r"operations (?:manager|specialist|coordinator|associate|supervisor|lead|administrator)s?",
-        r"operations (?:interns?|internships?|co-?ops?)",
-        r"ops (?:manager|specialist|coordinator|associate)", r"data analysts?",
-    )),
-    (32, "generic operations / data", _words(
-        r"operations", r"operational", r"ops",
-        r"(?:bi|business intelligence|reporting|analytics|insights) analysts?", r"analytics",
-        r"consultants?", r"planning",
-    )),
-    (22, "generic", _words(
-        r"analysts?", r"specialists?", r"coordinators?", r"associates?", r"managers?", r"mgr",
-        r"administrators?", r"interns?", r"internships?", r"co-?op", r"officers?", r"advisors?",
-        r"lead",
-    )),
-]
-_TOP_FAMILIES = {"risk/compliance", "operations analytics", "supply chain", "program management"}
+_FAMILIES = [(f["points"], f["label"], _words(*f["title_patterns"])) for f in _CFG["role_families"]]
+_TOP_FAMILIES = set(_CFG["top_families"])
 # Risk roles outside her fraud / operational / supply-chain risk lane: finance-quant risk,
 # insurance loss control, workplace-safety and clinical risk.
 _RISK_OFFDOMAIN = _words(
@@ -417,17 +343,12 @@ def _h1b_approvals(company):
 # Location rules
 # --------------------------------------------------------------------------------------
 
-_SEATTLE_CORE = _words(r"seattle", r"bellevue", r"redmond", r"kirkland")
-_SEATTLE_NEAR = _words(
-    r"bothell", r"renton", r"kent", r"tukwila", r"seatac", r"burien", r"issaquah", r"sammamish",
-    r"woodinville", r"lynnwood", r"mercer island", r"shoreline", r"kenmore", r"mountlake terrace",
-    r"edmonds", r"mill creek", r"everett", r"mukilteo", r"federal way", r"auburn", r"des moines",
-    r"covington", r"maple valley", r"snoqualmie", r"newcastle", r"tacoma", r"fife", r"puyallup",
-    r"sumner", r"lakewood", r"algona", r"pacific", r"edgewood", r"lake stevens", r"marysville",
-    r"monroe", r"snohomish", r"bainbridge island", r"king county", r"normandy park", r"duvall",
-    r"north bend", r"lake forest park", r"medina", r"clyde hill", r"milton", r"dupont",
-)
-_IN_WA = re.compile(r"(?:^|,)\s*(?:wa|washington)\s*(?:,|$)(?!\s*d\.?\s?c\b)", re.I)
+_HOME = _CFG["home_area"]
+_HOME_CORE = _words(*_HOME["core_cities"])
+_HOME_NEAR = _words(*_HOME["near_cities"])
+HOME_LABELS = (_HOME["core_label"], _HOME["label"])
+_IN_HOME_STATE = re.compile(
+    rf"(?:^|,)\s*(?:{re.escape(_HOME['state'])}|{re.escape(_HOME['state_name'])})\s*(?:,|$)(?!\s*d\.?\s?c\b)", re.I)
 _DC = re.compile(r"\bwashington,?\s*d\.?\s?c\b|\bdistrict of columbia\b", re.I)
 _REMOTE = _words(r"remote", r"work from home", r"wfh")
 
@@ -435,15 +356,15 @@ _REMOTE = _words(r"remote", r"work from home", r"wfh")
 def _location_points(location, is_remote, title):
     loc = (location or "").strip()
     remote = bool(is_remote) or bool(_REMOTE.search(loc)) or bool(_REMOTE.search(title))
-    in_wa = bool(_IN_WA.search(loc)) and not _DC.search(loc)
+    in_wa = bool(_IN_HOME_STATE.search(loc)) and not _DC.search(loc)
     city = loc.split(",")[0] if loc else ""
     no_state = "," not in loc
-    if (in_wa or no_state) and _SEATTLE_CORE.search(city):
-        return 15.0, "Seattle / Eastside"
-    if (in_wa or no_state) and _SEATTLE_NEAR.search(city):
-        return 13.0, "Seattle area"
+    if (in_wa or no_state) and _HOME_CORE.search(city):
+        return 15.0, HOME_LABELS[0]
+    if (in_wa or no_state) and _HOME_NEAR.search(city):
+        return 13.0, HOME_LABELS[1]
     if in_wa:
-        return (11.0 if remote else 8.0), "Washington State"
+        return (11.0 if remote else 8.0), _HOME["state_name"]
     if remote:
         return 11.0, "Remote"
     # Big US metros outrank small towns (user priority, 2026-09-27)
@@ -515,17 +436,8 @@ _EVERIFY = re.compile(r"\bparticipates? in (?:the )?e-?verify\b|\be-?verify (?:e
 
 # Skills/domain words from her background; counted once each. Single words are matched as
 # whole tokens, phrases with a word-boundary regex.
-_REL_WORDS = {"fraud", "compliance", "audit", "audits", "auditing", "sop", "sops", "escalation",
-              "escalations", "investigation", "investigations", "kpi", "kpis", "dashboard",
-              "dashboards", "sql", "excel", "jira", "tableau", "lean", "stakeholder", "stakeholders",
-              "cross-functional", "procurement", "vendor", "vendors", "supplier", "suppliers",
-              "inventory", "forecasting", "policy", "policies", "kyc", "aml", "automation",
-              "workflow", "workflows", "triage"}
-_REL_PHRASES = _words(
-    r"risk (?:assessment|management|mitigation|analysis)", r"standard operating procedures?",
-    r"process improvements?", r"root cause", r"quality assurance", r"power bi", r"six sigma",
-    r"supply chain", r"data analysis", r"trust (?:&|and) safety",
-)
+_REL_WORDS = set(_CFG["relevance_words"])
+_REL_PHRASES = _words(*_CFG["relevance_phrases"])
 _WORD_RX = re.compile(r"[a-z0-9][a-z0-9&\-]*")
 
 # Requirements after these headings are "nice to have", not required.
@@ -654,21 +566,21 @@ def _norm_title(title):
 def _role_points(t):
     """Title -> (points 0-50, family label, cap or None, red flag or None)."""
     core = bool(_TITLE_TARGET_CORE.search(t))
-    if _CLINICAL.search(t):
+    if "clinical" in _EXCLUDED and (_CLINICAL.search(t)):
         return 5.0, "clinical", 25.0, "Clinical / licensed-healthcare role"
-    if _HEALTH_CONTEXT.search(t) and not core:
+    if "healthcare" in _EXCLUDED and (_HEALTH_CONTEXT.search(t) and not core):
         return 10.0, "healthcare delivery", 35.0, "Healthcare-delivery role, not SCM/ops"
-    if _FOOD_FRONTLINE.search(t) or (_FOOD_CONTEXT.search(t) and not core):
+    if "food" in _EXCLUDED and (_FOOD_FRONTLINE.search(t) or (_FOOD_CONTEXT.search(t) and not core)):
         return 5.0, "food service", 20.0, "Food service / hospitality role"
-    if _RETAIL_STORE.search(t):
+    if "retail" in _EXCLUDED and (_RETAIL_STORE.search(t)):
         return 5.0, "retail store", 22.0, "Retail-store / front-line role"
-    if _DRIVING.search(t):
+    if "driving" in _EXCLUDED and (_DRIVING.search(t)):
         return 5.0, "driving", 18.0, "Driving / equipment-operator role"
-    if _WAREHOUSE_LABOR.search(t):
+    if "warehouse" in _EXCLUDED and (_WAREHOUSE_LABOR.search(t)):
         return 5.0, "warehouse labor", 20.0, "Warehouse / hourly labor role"
-    if _TRADES.search(t):
+    if "trades" in _EXCLUDED and (_TRADES.search(t)):
         return 5.0, "trades", 20.0, "Skilled-trade / technician role"
-    if _UNRELATED.search(t):
+    if "unrelated" in _EXCLUDED and (_UNRELATED.search(t)):
         return 5.0, "unrelated", 22.0, "Unrelated field"
 
     best, label = 12.0, "none"
@@ -690,12 +602,14 @@ def _role_points(t):
 
     cap, flag = None, None
     head = re.split(r",|\(|:|\s[-|]\s", t, maxsplit=1)[0]
-    if _TECH_HARD.search(head):
+    tech = "engineering" in _EXCLUDED
+    if tech and _TECH_HARD.search(head):
         best = min(best, 34.0 if _PGM_TITLE.search(t) else 18.0)
         cap, flag = 45.0, "Engineering / technical role"
-    elif _TECH_SOFT_ANY.search(_TPM_PHRASE.sub(" ", t)) or _TECH_SOFT_HEAD.search(head):
+    elif "it_security" in _EXCLUDED and (_TECH_SOFT_ANY.search(_TPM_PHRASE.sub(" ", t))
+                                          or _TECH_SOFT_HEAD.search(head)):
         best = min(best, 34.0 if (core or _PGM_TITLE.search(t)) else 20.0)
-    if cap is None and _TECHNICAL_PM.search(t):
+    if cap is None and TECHNICAL_PM_CAP is not None and _TECHNICAL_PM.search(t):
         cap, flag = TECHNICAL_PM_CAP, "Technical PM role — ranked below non-technical PM / ops roles"
     other = bool(_OTHER_FUNCTION.search(t)) or (
         bool(_FINANCE_FUNCTION.search(t)) and label != "risk/compliance")
@@ -801,7 +715,7 @@ def score_job_quick(title, company, location, description, job_type=None, date_p
     intern_title = bool(_INTERN_TITLE.search(t))
     bonus = 0.0     # positive signals: scaled by role relevance below
     penalty = 0.0   # negative signals: applied in full
-    if intern_title:
+    if intern_title and _CFG.get("internships") == "fallback":
         penalty -= 6.0
         red_flags.append("Internship — fallback only (full-time is the priority)")
     elif job_type == "internship":
@@ -820,24 +734,24 @@ def score_job_quick(title, company, location, description, job_type=None, date_p
         red_flags.append("Contract / temporary / part-time (STEM OPT needs a bona fide employer)")
 
     # --- F-1 eligibility from title & company ---
-    clearance_hit = _TITLE_CLEARANCE.search(t)
+    clearance_hit = _TITLE_CLEARANCE.search(t) if _VISA else None
     if clearance_hit and clearance_hit.group(0).startswith("defen") and _TITLE_DEFENSE_OK.search(t):
         clearance_hit = None
     if clearance_hit:
         caps.append(30.0)
         red_flags.append("Title signals clearance / defense / citizenship requirement (F-1 ineligible)")
-    elif _TITLE_GOVERNMENT.search(t):
+    elif _VISA and _TITLE_GOVERNMENT.search(t):
         caps.append(40.0)
         red_flags.append("Government / federal-program role (usually U.S. citizens only)")
-    if _FEDERAL_AGENCY.search(company):
+    if _VISA and _FEDERAL_AGENCY.search(company):
         caps.append(35.0)
         red_flags.append("U.S. federal agency — citizenship required")
 
     desc = _norm_desc(description) if description else ""
     dl = desc.lower()
     has_desc = len(dl) > 200
-    defense_employer = bool(_DEFENSE_EMPLOYER.search(company))
-    leo = bool(_AMAZON_LEO.search(t)) and bool(re.search(r"\bamazon\b", company, re.I))
+    defense_employer = _VISA and bool(_DEFENSE_EMPLOYER.search(company))
+    leo = _VISA and bool(_AMAZON_LEO.search(t)) and bool(re.search(r"\bamazon\b", company, re.I))
     if (defense_employer or leo) and not has_desc:
         caps.append(40.0)
         red_flags.append("Employer/program usually requires U.S.-person status or clearance (ITAR) — verify")
@@ -847,7 +761,7 @@ def score_job_quick(title, company, location, description, job_type=None, date_p
     # --- description signals ---
     years_req = 0
     desc_pts = 2.0
-    if has_desc:
+    if has_desc and _VISA:
         if (_first_near(dl, _US_PERSON, ("person",), 12, 40)
                 or _first_near(dl, _EXPORT_REQ, ("export", "itar"), 120, 20)
                 or _first_near(dl, _CLEARANCE, ("clearance", "secret", "ts/sci", "ts / sci", "polygraph",
@@ -884,29 +798,30 @@ def score_job_quick(title, company, location, description, job_type=None, date_p
                 bonus += 1.5
                 highlights.append("E-Verify employer (STEM OPT eligible)")
 
+    if has_desc:
         years_req = _extract_years_required(desc)
         if years_req:
             if years_req <= 2:
                 bonus += 2.0
             elif years_req <= 4:
                 bonus += 4.0
-                highlights.append(f"Requires {years_req:g} years — matches her {CANDIDATE_YEARS}")
+                highlights.append(f"Requires {years_req:g} years — matches {_NAME}'s {CANDIDATE_YEARS}")
             elif years_req <= 5:
                 # One year short is routinely accepted, especially with a master's
                 # ("Bachelor's + 5 or Master's + 3" is a common formula).
                 bonus += 1.0
-                red_flags.append(f"Requires {years_req:g}+ years — one short of her {CANDIDATE_YEARS}; usually fine with the MSCM")
+                red_flags.append(f"Requires {years_req:g}+ years — one short of {_NAME}'s {CANDIDATE_YEARS}; usually fine with a master's")
             elif years_req <= 6:
                 penalty -= 6.0
-                red_flags.append(f"Requires {years_req:g}+ years (Bhumika has {CANDIDATE_YEARS})")
+                red_flags.append(f"Requires {years_req:g}+ years ({_NAME} has {CANDIDATE_YEARS})")
             elif years_req < 10:
                 penalty -= 14.0
                 caps.append(60.0)
-                red_flags.append(f"Requires {years_req:g}+ years (Bhumika has {CANDIDATE_YEARS})")
+                red_flags.append(f"Requires {years_req:g}+ years ({_NAME} has {CANDIDATE_YEARS})")
             else:
                 penalty -= 22.0
                 caps.append(45.0)
-                red_flags.append(f"Requires {years_req:g}+ years (Bhumika has {CANDIDATE_YEARS})")
+                red_flags.append(f"Requires {years_req:g}+ years ({_NAME} has {CANDIDATE_YEARS})")
 
         kws = {w.rstrip("s") for w in set(_WORD_RX.findall(dl)) & _REL_WORDS}
         kws |= {m.group(0).split()[0] + "+" for m in _REL_PHRASES.finditer(dl)}
@@ -945,7 +860,7 @@ def score_job_quick(title, company, location, description, job_type=None, date_p
     elif role >= 34:
         highlights.insert(0, f"Title partially relevant ({family})")
     elif cap is None and role <= 16:
-        red_flags.append("Not relevant to SCM / risk / operations career")
+        red_flags.append("Not relevant to the target roles")
     if loc_label:
         highlights.append(loc_label)
     if approvals >= 100:
