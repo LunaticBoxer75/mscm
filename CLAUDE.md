@@ -166,7 +166,7 @@ her last-good data read-only with a banner and refuses writes rather than droppi
    is Pass-1-only.
 
 **Internship vs full-time comes from the TITLE** (`scraper.classify_job_type`): intern/internship/co-op
-or "<season> 20xx". The boards' internship filter is loose — 70% of what it returned were ordinary
+or "<season> 20xx" or "Summer Analyst/Associate" (banks' name for an internship). The boards' internship filter is loose — 70% of what it returned were ordinary
 jobs — and new-grad roles are full-time (OPT) for her.
 
 **Known limits — do not paper over them:**

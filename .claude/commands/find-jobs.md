@@ -79,7 +79,8 @@ Indeed + LinkedIn, 168h lookback (tolerates missed days). **~884 searches** (34 
 - Every posting is **scored before it's stored**; under 70 it is skipped (`min_store_score`, default
   70). The progress line shows `+N new (M below 70 skipped so far)`.
 - **Region comes from the job's location**, not the search that found it; **internship vs full-time
-  comes from the title** (intern / internship / co-op / "<season> 20xx"). New-grad = full-time.
+  comes from the title** (intern / internship / co-op / "<season> 20xx" / "Summer Analyst" or "Summer
+  Associate", the banks' internship name). New-grad and "2027 Full Time" = full-time.
 - A LinkedIn 429 pauses all workers 2 minutes and shows `N LinkedIn blocks`; if blocks keep coming,
   lower `scrape_workers`.
 - It commits after every search and prints one `[done/total] … ~Nm left` line each, so a hung run is

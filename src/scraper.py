@@ -123,7 +123,9 @@ def _fetch(task, sites, results, hours_old, country):
 # loose: 70% of rows it returned (12,729 of 18,297 by 2026-09) were ordinary jobs —
 # "Program Manager", "Audit and Compliance Senior" — which then got filed, capped,
 # and hidden as internships. New-grad roles count as full-time.
-_INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?)\b|\b(summer|fall|winter|spring)\s+20\d\d\b")
+# "Summer Analyst/Associate" is the banks' name for an internship (JPMorgan, Citi 2027 programs).
+_INTERN_RE = re.compile(r"\b(internships?|interns?|co-?ops?|summer (?:analyst|associate)s?)\b"
+                        r"|\b(summer|fall|winter|spring)\s+20\d\d\b")
 
 
 def classify_job_type(title):
