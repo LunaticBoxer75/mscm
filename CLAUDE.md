@@ -34,7 +34,9 @@ python -m src.pipeline report    # Just generate report
 
 - **Full-time is the priority.** Internships are a FALLBACK ONLY as of 2026-09-23 — the UW CPT
   one-year rule likely rules out an internship inside her first academic year. Report full-time
-  first; do not re-elevate internships without being told.
+  first; do not re-elevate internships without being told. **Internships are no longer searched**
+  (2026-11-10, user: "remove internship from our searches"): `job_types` = `["fulltime"]` and no intern/co-op
+  search terms; intern-titled jobs that full-time searches return still land in the internship tabs.
 - **Risk / Compliance / Operations roles rank highest** — they match her actual Uber background.
 - **Technical roles are not a priority — "PM is way above TPM"** (2026-09-27). TPM / technical
   program-project-product manager titles are capped at 72 in both scorers: kept, but ranked below
@@ -133,7 +135,7 @@ her last-good data read-only with a banner and refuses writes rather than droppi
 
 ```
 /find-jobs in Claude Code
-    → Scrapes Indeed + LinkedIn (36 queries × 2 job types × 13 locations, 3 in parallel, commit per search)
+    → Scrapes Indeed + LinkedIn (23 queries × full-time only × 14 locations = 322 searches, 3 in parallel, commit per search)
     → Pass 1: quick-scores ALL jobs, then ASSERTS zero unscored
     → Pass 2: Claude reads descriptions inline for top candidates, stamps scorer="ai"
     → 4-panel report (full-time first, internships flagged as fallback)

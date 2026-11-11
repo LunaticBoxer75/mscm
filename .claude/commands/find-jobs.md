@@ -28,6 +28,7 @@ the same change (standing instruction from the user, 2026-09-27).
 | **Nothing scoring under 70 is kept — including jobs Claude rated under 70** ("remove low-rated automatically, even the existing ones") | 2026-09-27 | Scraper skips <70; export deletes every <70 row except her tracked/dismissed jobs. Claude-rated ones go to `rejected_urls` (30 days) so the scraper doesn't re-add them |
 | **Closed postings are removed**, not left at their old keyword score | 2026-09-27 | Step 3b detects LinkedIn's expired redirect; step 7 deletes (tracked/dismissed kept) |
 | **Claude reads every Seattle FT job at 70+ and every national FT job at 85+** ("why have all the high scoring jobs not been ranked?") — LinkedIn descriptions fetched first | 2026-09-27 | Steps 3b + 4a; national 70-84 stays Pass-1-only |
+| **No internship searches** — `job_types` is `["fulltime"]` and the 11 intern/co-op search terms are gone ("remove internship from our searches") | 2026-11-10 | Internship tabs keep existing rows plus intern-titled jobs that full-time searches return; don't re-add intern searches without asking |
 | **LinkedIn stays daily** despite being ~98% of scrape time | 2026-09-26 | Don't drop or down-sample it |
 | **Bellevue / Kirkland / Redmond not searched** — Seattle's radius covers them (they added 9 of 169) | 2026-09-26 | Their jobs still land in the Seattle tab |
 | **Dropped searches:** "operations leadership development program" (7% relevant), "process improvement analyst" (10%) | 2026-09-27 | Don't re-add |
@@ -70,8 +71,8 @@ cd /Users/aniketsw/workspaces/mscm && sqlite3 "file:data/jobs.db?mode=ro" "PRAGM
 
 ## 1. Scrape [REQUIRED]
 
-Indeed + LinkedIn, 168h lookback (tolerates missed days). **~884 searches** (34 queries × 2 job types ×
-13 locations), **~4h** — run it in the background and monitor it.
+Indeed + LinkedIn, 168h lookback (tolerates missed days). **~322 searches** (23 queries × full-time only ×
+14 locations), **~1.5h** — run it in the background and monitor it.
 
 - Each search takes ~50s, almost all of it LinkedIn pausing 3-7s between its ~10 page requests
   (Indeed: <1s). 3 searches run in parallel (`scrape_workers` in `config/profile.json`
@@ -517,7 +518,7 @@ exported, prune + cleanup counts, deploy DB size.
   It also holds every person-specific rule: Pass-1 `scoring` (role families, home area, keywords,
   exclusions, TPM cap), the Pass-2 `pass2_rubric`, intro text, skills she has, seed to-dos. Change her
   priorities THERE, not in `src/quick_scorer.py` / `src/scorer.py` (loaded by `src/profile.py`).
-- Searches (34): `config/search_queries.json` · Company sizes: `config/company_sizes.json`
+- Searches (23, full-time only): `config/search_queries.json` · Company sizes: `config/company_sizes.json`
 - **Jobs (local, full):** `data/jobs.db` — gitignored; one row per posting URL; only 70+ kept
 - **Dashboard jobs:** `data/jobs_deploy.db` → `jobs-data` branch (`scripts/publish_jobs_db.py`),
   downloaded by the app (`src/jobs_data.py`)
